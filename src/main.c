@@ -571,6 +571,19 @@ int pins_init(const struct device *dev)
 
 SYS_INIT(pins_init, POST_KERNEL, 40);
 
+static void event_handler(struct net_mgmt_event_callback*, uint32_t mgmt_event, struct net_if*)
+{
+	if (mgmt_event == NET_EVENT_L4_CONNECTED)
+	{
+		printk("Network connected");
+	}
+
+	if (mgmt_event == NET_EVENT_L4_DISCONNECTED)
+	{
+		printk("Network disconnected");
+	}
+}
+
 int main(void)
 {
 	struct net_if *bgxx_iface = net_if_get_first_by_type(&NET_L2_GET_NAME(PPP));
@@ -579,77 +592,64 @@ int main(void)
 	uint32_t events;
 	int ret;
 
+	/* Network status */
+	static struct net_mgmt_event_callback mgmt_cb;
+
+	net_mgmt_init_event_callback(&mgmt_cb, event_handler, NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED);
+	net_mgmt_add_event_callback(&mgmt_cb);
+
 	quectel_bgxx_resume(bgxx);
 
 	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "ATE0\r\n",
 				  sizeof("ATE0\r\n") - 1);
 
-	events = k_event_wait(&bgxx_data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
+	k_msleep(500);
 
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "ATI\r\n",
-				  sizeof("ATI\r\n") - 1);
+	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "ATH\r\n",
+				  sizeof("ATH\r\n") - 1);
 
-	events = k_event_wait(&bgxx_data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
+	k_msleep(500);
 
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CSQ\r\n",
-				  sizeof("AT+CSQ\r\n") - 1);
+	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CMEE=1\r\n",
+				  sizeof("AT+CMEE=1\r\n") - 1);
 
-	events = k_event_wait(&bgxx_data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
+	k_msleep(500);
 
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CPIN?\r\n",
-				  sizeof("AT+CPIN?\r\n") - 1);
+	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CREG=0\r\n",
+				  sizeof("AT+CREG=0\r\n") - 1);
 
-	events = k_event_wait(&bgxx_data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
-
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+COPS?\r\n",
-				  sizeof("AT+COPS?\r\n") - 1);
-
-	events = k_event_wait(&bgxx_data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
-
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CGREG?\r\n",
-				  sizeof("AT+CGREG?\r\n") - 1);
-
-	events = k_event_wait(&bgxx_data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
-
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "ATZ\r\n",
-				  sizeof("ATZ\r\n") - 1);
-
-	events = k_event_wait(&bgxx_data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
-
+	k_msleep(500);
 
 	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CGDCONT=1,\"IP\",\"trackunit.m2m\",,0,0\r\n",
 				  sizeof("AT+CGDCONT=1,\"IP\",\"trackunit.m2m\",,0,0\r\n") - 1);
 
-	events = k_event_wait(&bgxx_data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
+	k_msleep(500);
 
-	k_msleep(10000);
+	for (uint8_t i = 0; i < 5; i++) {
+		ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CREG?\r\n",
+					  sizeof("AT+CREG?\r\n") - 1);
+
+		k_msleep(5000);
+	}
+
+	k_msleep(500);
+
+	for (uint8_t i = 0; i < 5; i++) {
+		ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CGATT?\r\n",
+					  sizeof("AT+CGATT?\r\n") - 1);
+
+		k_msleep(5000);
+	}
 
 	net_ppp_carrier_on(bgxx_iface);
 
-	k_msleep(10000);
+	k_msleep(90000);
 
 
 	/* Test some networking */
 	struct zsock_addrinfo address;
 	static struct sockaddr sock_address;
 	volatile int sock_fd;
-	volatile int err;
 
 	address.ai_family = AF_INET;
 	address.ai_protocol = IPPROTO_UDP;
