@@ -35,6 +35,7 @@ enum modem_cmux_event_type {
 	MODEM_CMUX_EVENT_DISCONNECTED,
 	MODEM_CMUX_EVENT_OPENED,
 	MODEM_CMUX_EVENT_CLOSED,
+	MODEM_CMUX_EVENT_MODEM_STATUS,
 };
 
 struct modem_cmux_event {
