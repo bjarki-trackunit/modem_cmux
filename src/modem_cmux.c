@@ -5,7 +5,7 @@
  */
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(modem_cmux, CONFIG_MODEM_CMUX_LOG_LEVEL);
+LOG_MODULE_REGISTER(modem_cmux, 4);
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/crc.h>
@@ -75,6 +75,27 @@ struct modem_cmux_frame_encoded {
 	uint8_t tail[MODEM_CMUX_FRAME_TAIL_SIZE];
 	uint8_t tail_len;
 };
+
+
+/*************************************************************************************************
+ * Logging helpers
+ *************************************************************************************************/
+static void modem_cmux_log_unknown_frame(struct modem_cmux *cmux)
+{
+	char data[24];
+	uint8_t data_cnt = (cmux->frame.data_len < 8) ? cmux->frame.data_len : 8;
+	for (uint8_t i = 0; i < data_cnt; i++) {
+		snprintk(&data[i * 3], sizeof(data) - (i * 3), "%02X,", cmux->frame.data[i]);
+	}
+
+	/* Remove trailing */
+	if (data_cnt > 0) {
+		data[(data_cnt * 3) - 1] = '\0';
+	}
+
+	LOG_DBG("ch:%u, type:%u, data:%s", cmux->frame.dlci_address, cmux->frame.type, data);
+}
+
 
 /*************************************************************************************************
  * Static non-threadsafe helpers
@@ -505,8 +526,53 @@ static void modem_cmux_process_on_frame_received_uih_control(struct modem_cmux *
 			/* Release bus pipe */
 			modem_pipe_event_handler_set(cmux->pipe, NULL, NULL);
 			cmux->pipe = NULL;
+
+			return;
 		}
 	}
+
+	/* Modem status event */
+	if (cmux->frame.data_len == 4) {
+		if ((cmux->frame.data[0] == ((((uint8_t)MODEM_CMUX_CMD_MSC) << 1) | 0x03)) &&
+		    (cmux->frame.cr == false) &&
+		    (cmux->frame.pf == true)) {
+			/* Notify CMUX event occured */
+			struct modem_cmux_event cmux_event = {
+				.dlci_address = 0,
+				.type = MODEM_CMUX_EVENT_MODEM_STATUS
+			};
+
+			modem_cmux_raise_event(cmux, cmux_event);
+
+			/* Respond with identical frame */
+			modem_cmux_bus_write_frame(cmux, &cmux->frame);
+
+			return;
+		}
+	}
+
+	/* Modem status event */
+	if (cmux->frame.data_len == 4) {
+		if ((cmux->frame.data[0] == ((((uint8_t)MODEM_CMUX_CMD_MSC) << 1) | 0x01)) &&
+		    (cmux->frame.cr == true) &&
+		    (cmux->frame.pf == true)) {
+			/* Notify CMUX event occured */
+			struct modem_cmux_event cmux_event = {
+				.dlci_address = 0,
+				.type = MODEM_CMUX_EVENT_MODEM_STATUS
+			};
+
+			modem_cmux_raise_event(cmux, cmux_event);
+
+			/* Respond with identical frame */
+			modem_cmux_bus_write_frame(cmux, &cmux->frame);
+
+			return;
+		}
+	}
+
+	/* Notify unknown frame */
+	modem_cmux_log_unknown_frame(cmux);
 }
 
 static void modem_cmux_process_on_frame_received_uih(struct modem_cmux *cmux)
@@ -567,12 +633,9 @@ static void modem_cmux_process_received(struct k_work *item)
         struct modem_cmux *cmux = cmux_process->cmux;
         int ret;
 
-	k_mutex_lock(&cmux->lock, K_FOREVER);
-
 	/* Receive from bus pipe */
 	ret = modem_cmux_bus_pipe_receive(cmux);
 	if (ret < 0) {
-		k_mutex_unlock(&cmux->lock);
 		return;
 	}
 
@@ -583,7 +646,6 @@ static void modem_cmux_process_received(struct k_work *item)
 
 		/* Check if frame incomplete */
 		if (ret == -EAGAIN) {
-			k_mutex_unlock(&cmux->lock);
 			return;
 		}
 
@@ -592,7 +654,6 @@ static void modem_cmux_process_received(struct k_work *item)
 			/* Reset receive buffer */
 			cmux->receive_buf_cnt = 0;
 
-			k_mutex_unlock(&cmux->lock);
 			return;
 		}
 
@@ -604,8 +665,6 @@ static void modem_cmux_process_received(struct k_work *item)
 		/* Discard received frame out of receive buffer */
 		modem_cmux_receive_buffer_discard(cmux, (uint16_t)ret);
 	}
-
-	k_mutex_unlock(&cmux->lock);
 }
 
 /*************************************************************************************************
@@ -653,7 +712,7 @@ static int modem_cmux_dlci_pipe_transmit(struct modem_pipe *pipe, const uint8_t 
 	}
 
 	k_mutex_unlock(&cmux->lock);
-	return 0;
+	return size;
 }
 
 static int modem_cmux_dlci_pipe_receive(struct modem_pipe *pipe, uint8_t *buf,
@@ -927,12 +986,24 @@ int modem_cmux_disconnect(struct modem_cmux *cmux)
 	/* Update state */
 	cmux->state = MODEM_CMUX_STATE_DISCONNECTING;
 
+	/* Request disconnect */
 	ret = modem_cmux_bus_write_frame(cmux, &frame);
 	if (ret < 0) {
 		k_mutex_unlock(&cmux->lock);
 		return ret;
 	}
 
+	/* Lazy await disconnect */
+	k_msleep(300);
+
+	/* Release bus pipe */
+	modem_pipe_event_handler_set(cmux->pipe, NULL, NULL);
+
+	/* Cancel work */
+	struct k_work_sync sync;
+	k_work_cancel_delayable_sync(&cmux->process_received.dwork, &sync);
+
 	k_mutex_unlock(&cmux->lock);
+
 	return 0;
 }
