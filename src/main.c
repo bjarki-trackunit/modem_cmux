@@ -49,7 +49,12 @@ struct quectel_bgxx_data {
 	struct modem_cmd cmd;
 	uint8_t cmd_receive_buf[128];
 	uint8_t cmd_delimiter[2];
+	uint8_t *cmd_argv[16];
 	struct k_event cmd_events;
+
+	/* State */
+	uint8_t creg;
+	uint8_t cgatt;
 
 	/* Networking */
 	struct net_if *net_iface;
@@ -98,51 +103,102 @@ uint8_t response_test[128];
 #define EVENT_CMD_AT_POWER_DOWN    (BIT(2))
 #define EVENT_CMD_AT_OK            (BIT(3))
 #define EVENT_CMD_AT_CONNECT       (BIT(4))
+#define EVENT_CMD_AT_CREG          (BIT(5))
+#define EVENT_CMD_AT_CGATT         (BIT(6))
 
-/* Lazy command handler (should be written to use struct modem_cmd like zephyr/drivers/modem_cmd_handler.h) */
-void quectel_bgxx_cmd_on_received(const uint8_t *buf, uint16_t size, void* user_data)
+/*********************************************************************************************
+ * Command handler
+ *********************************************************************************************/
+void on_rdy(struct modem_cmd *cmd, char **argv, uint16_t argc, void *user_data)
 {
 	struct quectel_bgxx_data *data = (struct quectel_bgxx_data *)user_data;
 
-	for (uint16_t i = 0; i < size; i++) {
-		printk("%c", buf[i]);
+	for (uint16_t i = 0; i < argc; i++) {
+		printk("%s", argv[i]);
 	}
 
-	if (size == (sizeof("RDY\r\n") - 1)) {
-		if (memcmp(buf, "RDY\r\n", sizeof("RDY\r\n") - 1) == 0) {
-			k_event_post(&data->cmd_events, EVENT_CMD_AT_RDY);
-			return;
-		}
-	}
-
-	if (size == (sizeof("APP RDY\r\n") - 1)) {
-		if (memcmp(buf, "APP RDY\r\n", sizeof("APP RDY\r\n") - 1) == 0) {
-			k_event_post(&data->cmd_events, EVENT_CMD_AT_APP_RDY);
-			return;
-		}
-	}
-
-	if (size == (sizeof("NORMAL POWER DOWN\r\n") - 1)) {
-		if (memcmp(buf, "NORMAL POWER DOWN\r\n", sizeof("NORMAL POWER DOWN\r\n") - 1) == 0) {
-			k_event_post(&data->cmd_events, EVENT_CMD_AT_POWER_DOWN);
-			return;
-		}
-	}
-
-	if (size == (sizeof("OK\r\n") - 1)) {
-		if (memcmp(buf, "OK\r\n", sizeof("OK\r\n") - 1) == 0) {
-			k_event_post(&data->cmd_events, EVENT_CMD_AT_OK);
-			return;
-		}
-	}
-
-	if (size == (sizeof("CONNECT 150000000\r\n") - 1)) {
-		if (memcmp(buf, "CONNECT 150000000\r\n", sizeof("CONNECT 150000000\r\n") - 1) == 0) {
-			k_event_post(&data->cmd_events, EVENT_CMD_AT_CONNECT);
-			return;
-		}
-	}
+	k_event_post(&data->cmd_events, EVENT_CMD_AT_RDY);
 }
+
+void on_app_rdy(struct modem_cmd *cmd, char **argv, uint16_t argc, void *user_data)
+{
+	struct quectel_bgxx_data *data = (struct quectel_bgxx_data *)user_data;
+
+	for (uint16_t i = 0; i < argc; i++) {
+		printk("%s", argv[i]);
+	}
+
+	k_event_post(&data->cmd_events, EVENT_CMD_AT_APP_RDY);
+}
+
+void on_power_down(struct modem_cmd *cmd, char **argv, uint16_t argc, void *user_data)
+{
+	struct quectel_bgxx_data *data = (struct quectel_bgxx_data *)user_data;
+
+	for (uint16_t i = 0; i < argc; i++) {
+		printk("%s", argv[i]);
+	}
+
+	k_event_post(&data->cmd_events, EVENT_CMD_AT_POWER_DOWN);
+}
+
+void on_ok(struct modem_cmd *cmd, char **argv, uint16_t argc, void *user_data)
+{
+	struct quectel_bgxx_data *data = (struct quectel_bgxx_data *)user_data;
+
+	for (uint16_t i = 0; i < argc; i++) {
+		printk("%s", argv[i]);
+	}
+
+	k_event_post(&data->cmd_events, EVENT_CMD_AT_OK);
+}
+
+void on_connect(struct modem_cmd *cmd, char **argv, uint16_t argc, void *user_data)
+{
+	struct quectel_bgxx_data *data = (struct quectel_bgxx_data *)user_data;
+
+	for (uint16_t i = 0; i < argc; i++) {
+		printk("%s", argv[i]);
+	}
+
+	k_event_post(&data->cmd_events, EVENT_CMD_AT_CONNECT);
+}
+
+void on_creg(struct modem_cmd *cmd, char **argv, uint16_t argc, void *user_data)
+{
+	struct quectel_bgxx_data *data = (struct quectel_bgxx_data *)user_data;
+
+	for (uint16_t i = 0; i < argc; i++) {
+		printk("%s\n", argv[i]);
+	}
+
+	data->creg = atoi(argv[2]);
+
+	k_event_post(&data->cmd_events, EVENT_CMD_AT_CREG);
+}
+
+void on_cgatt(struct modem_cmd *cmd, char **argv, uint16_t argc, void *user_data)
+{
+	struct quectel_bgxx_data *data = (struct quectel_bgxx_data *)user_data;
+
+	for (uint16_t i = 0; i < argc; i++) {
+		printk("%s\n", argv[i]);
+	}
+
+	data->cgatt = atoi(argv[1]);
+
+	k_event_post(&data->cmd_events, EVENT_CMD_AT_CGATT);
+}
+
+struct modem_cmd_match cmd_matches[] = {
+	MODEM_CMD_MATCH("RDY", "", on_rdy),
+	MODEM_CMD_MATCH("APP RDY", "", on_app_rdy),
+	MODEM_CMD_MATCH("NORMAL POWER DOWN", "", on_power_down),
+	MODEM_CMD_MATCH("OK", "", on_ok),
+	MODEM_CMD_MATCH("CONNECT", " ", on_connect),
+	MODEM_CMD_MATCH("+CREG: ", ",", on_creg),
+	MODEM_CMD_MATCH("+CGATT: ", "", on_cgatt),
+};
 
 void quectel_bgxx_cmux_event_handler(struct modem_cmux *cmux, struct modem_cmux_event event,
 				     void *user_data)
@@ -217,17 +273,21 @@ int quectel_bgxx_init(const struct device *dev)
 		return ret;
 	}
 
-	/* Command parser */
-	memcpy(data->cmd_delimiter, "\r\n", sizeof("\r\n") - 1);
+	/* Command */
+	data->cmd_delimiter[0] = '\r';
+	data->cmd_delimiter[1] = '\n';
 
 	struct modem_cmd_config cmd_config = {
-		.cmd_received = quectel_bgxx_cmd_on_received,
 		.user_data = data,
 		.receive_buf = data->cmd_receive_buf,
 		.receive_buf_size = sizeof(data->cmd_receive_buf),
 		.delimiter = data->cmd_delimiter,
 		.delimiter_size = sizeof(data->cmd_delimiter),
-		.idle_timeout = K_MSEC(5),
+		.argv = data->cmd_argv,
+		.argv_size = sizeof(data->cmd_argv),
+		.matches = cmd_matches,
+		.matches_size = ARRAY_SIZE(cmd_matches),
+		.process_timeout = K_MSEC(20),
 	};
 
 	ret = modem_cmd_init(&data->cmd, &cmd_config);
@@ -291,23 +351,12 @@ int quectel_bgxx_resume(const struct device *dev)
 		.receive_buf_size = sizeof(data->at_dlci_receive_buf),
 	};
 
-	/* Do hardware resume here */
-	/* ... */
-
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	ret = modem_pipe_transmit(&data->bus_pipe, "AT+CMUX=0,0,5\r\n", sizeof("AT+CMUX=0,0,5\r\n") - 1);
-	if (ret < sizeof("AT+CMUX=0,0,5\r\n") - 1) {
-		k_mutex_unlock(&data->lock);
-		return -EAGAIN;
-	}
+	events = modem_cmd_send_sync_event(&data->cmd, "AT+CMUX=0,0,5", &data->cmd_events,
+					   EVENT_CMD_AT_OK, K_MSEC(1000));
 
-	events = k_event_wait(&data->cmd_events,
-				  (EVENT_CMD_AT_OK),
-				  true, K_MSEC(1000));
-
-	if ((events & EVENT_CMD_AT_OK) == 0) {
-		k_mutex_unlock(&data->lock);
+	if (events == 0) {
 		return -EAGAIN;
 	}
 
@@ -321,18 +370,22 @@ int quectel_bgxx_resume(const struct device *dev)
 	/* Wait for BGXX switch to CMUX mode */
 	k_msleep(300);
 
+	k_event_clear(&data->cmux_events, (EVENT_CMUX_CONNECTED));
+
 	ret = modem_cmux_connect(&data->cmux, &data->bus_pipe);
 	if (ret < 0) {
 		k_mutex_unlock(&data->lock);
 		return ret;
 	}
 
-	events = k_event_wait(&data->cmux_events, (EVENT_CMUX_CONNECTED), true, K_MSEC(330));
+	events = k_event_wait(&data->cmux_events, (EVENT_CMUX_CONNECTED), false, K_MSEC(330));
 
 	if (events == 0) {
 	    k_mutex_unlock(&data->lock);
 	    return -EAGAIN;
 	}
+
+	k_event_clear(&data->cmux_events, (EVENT_CMUX_PPP_DLCI_OPEN | EVENT_CMUX_AT_DLCI_OPEN));
 
 	ret = modem_cmux_dlci_open(&data->cmux, &ppp_dlci_config, &data->ppp_pipe);
 	if (ret < 0) {
@@ -348,7 +401,7 @@ int quectel_bgxx_resume(const struct device *dev)
 
 	events = k_event_wait_all(&data->cmux_events,
 				  (EVENT_CMUX_PPP_DLCI_OPEN | EVENT_CMUX_AT_DLCI_OPEN),
-				  true, K_MSEC(330));
+				  false, K_MSEC(330));
 
 	if (((events & EVENT_CMUX_PPP_DLCI_OPEN) == 0) ||
 	    ((events & EVENT_CMUX_AT_DLCI_OPEN) == 0)) {
@@ -479,14 +532,17 @@ static int quectel_bgxx_net_if_ppp_api_start(const struct device *dev)
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	ret = modem_pipe_transmit(&data->ppp_pipe, "ATDT*99#\r\n", sizeof("ATDT*99#\r\n") - 1);
+	ret = modem_pipe_transmit(&data->at_pipe, "ATD*99#\r\n", sizeof("ATD*99#\r\n") - 1);
 
-	if (ret < sizeof("ATDT*99#\r\n") - 1) {
+	if (ret < sizeof("ATD*99#\r\n") - 1) {
 		k_mutex_unlock(&data->lock);
 		return -EAGAIN;
 	}
 
 	k_msleep(1000);
+
+	uint8_t r[32];
+	modem_pipe_receive(&data->ppp_pipe, r, sizeof(r));
 
 	ret = modem_ppp_attach(&data->ppp, &data->ppp_pipe, data->net_iface);
 	if (ret < 0) {
@@ -598,52 +654,45 @@ int main(void)
 	net_mgmt_init_event_callback(&mgmt_cb, event_handler, NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED);
 	net_mgmt_add_event_callback(&mgmt_cb);
 
-	quectel_bgxx_resume(bgxx);
+	__ASSERT(quectel_bgxx_resume(bgxx) == 0, "Resume failed");
 
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "ATE0\r\n",
-				  sizeof("ATE0\r\n") - 1);
+	__ASSERT(modem_cmd_send_sync_event(&bgxx_data->cmd, "ATE0", &bgxx_data->cmd_events, EVENT_CMD_AT_OK, K_MSEC(1000)) > 0, "CMD failed");
 
-	k_msleep(500);
+	__ASSERT(modem_cmd_send_sync_event(&bgxx_data->cmd, "ATH", &bgxx_data->cmd_events, EVENT_CMD_AT_OK, K_MSEC(1000)) > 0, "CMD failed");
 
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "ATH\r\n",
-				  sizeof("ATH\r\n") - 1);
+	__ASSERT(modem_cmd_send_sync_event(&bgxx_data->cmd, "AT+CMEE=1", &bgxx_data->cmd_events, EVENT_CMD_AT_OK, K_MSEC(1000)) > 0, "CMD failed");
 
-	k_msleep(500);
+	__ASSERT(modem_cmd_send_sync_event(&bgxx_data->cmd, "AT+CREG=0", &bgxx_data->cmd_events, EVENT_CMD_AT_OK, K_MSEC(1000)) > 0, "CMD failed");
 
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CMEE=1\r\n",
-				  sizeof("AT+CMEE=1\r\n") - 1);
+	__ASSERT(modem_cmd_send_sync_event(&bgxx_data->cmd, "AT+CGDCONT=1,\"IP\",\"trackunit.m2m\",,0,0", &bgxx_data->cmd_events, EVENT_CMD_AT_OK, K_MSEC(1000)) > 0, "CMD failed");
 
-	k_msleep(500);
+	while (1) {
+		__ASSERT(modem_cmd_send_sync_event(&bgxx_data->cmd, "AT+CREG?", &bgxx_data->cmd_events, EVENT_CMD_AT_CREG, K_MSEC(1000)) > 0, "CMD failed");
 
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CREG=0\r\n",
-				  sizeof("AT+CREG=0\r\n") - 1);
+		if (bgxx_data->creg == 5) {
+			break;
+		}
 
-	k_msleep(500);
-
-	ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CGDCONT=1,\"IP\",\"trackunit.m2m\",,0,0\r\n",
-				  sizeof("AT+CGDCONT=1,\"IP\",\"trackunit.m2m\",,0,0\r\n") - 1);
-
-	k_msleep(500);
-
-	for (uint8_t i = 0; i < 5; i++) {
-		ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CREG?\r\n",
-					  sizeof("AT+CREG?\r\n") - 1);
-
-		k_msleep(5000);
+		k_msleep(500);
 	}
 
-	k_msleep(500);
+	while (1) {
+		__ASSERT(modem_cmd_send_sync_event(&bgxx_data->cmd, "AT+CGATT?", &bgxx_data->cmd_events, EVENT_CMD_AT_CGATT, K_MSEC(1000)) > 0, "CMD failed");
 
-	for (uint8_t i = 0; i < 5; i++) {
-		ret = modem_pipe_transmit(&bgxx_data->at_pipe, "AT+CGATT?\r\n",
-					  sizeof("AT+CGATT?\r\n") - 1);
+		if (bgxx_data->cgatt == 1) {
+			break;
+		}
 
+		k_msleep(500);
+	}
+
+	while(1) {
 		k_msleep(5000);
 	}
 
 	net_ppp_carrier_on(bgxx_iface);
 
-	k_msleep(90000);
+	k_msleep(5000);
 
 
 	/* Test some networking */
@@ -680,7 +729,7 @@ int main(void)
 
 	k_msleep(10000);
 
-	net_ppp_carrier_off(bgxx_iface);
+	/* net_ppp_carrier_off(bgxx_iface); */
 
 	quectel_bgxx_suspend(bgxx);
 

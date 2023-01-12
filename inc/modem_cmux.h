@@ -58,6 +58,18 @@ enum modem_cmux_dlci_state {
 	MODEM_CMUX_DLCI_STATE_CLOSING,
 };
 
+enum modem_cmux_receive_state {
+	MODEM_CMUX_RECEIVE_STATE_SOF = 0,
+	MODEM_CMUX_RECEIVE_STATE_ADDRESS,
+	MODEM_CMUX_RECEIVE_STATE_ADDRESS_CONT,
+	MODEM_CMUX_RECEIVE_STATE_CONTROL,
+	MODEM_CMUX_RECEIVE_STATE_LENGTH,
+	MODEM_CMUX_RECEIVE_STATE_LENGTH_CONT,
+	MODEM_CMUX_RECEIVE_STATE_DATA,
+	MODEM_CMUX_RECEIVE_STATE_FCS,
+	MODEM_CMUX_RECEIVE_STATE_EOF,
+};
+
 /**
  * @brief CMUX DLCI channel context data
  * @warning Do not modify any members of this object directly
@@ -126,13 +138,22 @@ struct modem_cmux {
 	/* Status */
 	enum modem_cmux_state state;
 
+	/* Receive state*/
+	enum modem_cmux_receive_state receive_state;
+
 	/* Receive buffer */
 	uint8_t *receive_buf;
 	uint16_t receive_buf_size;
-	uint16_t receive_buf_cnt;
+	uint16_t receive_buf_len;
+
+	/* Work buffer */
+	uint8_t work_buf[64];
+	uint16_t work_buf_len;
 
 	/* Received frame */
 	struct modem_cmux_frame frame;
+	uint8_t frame_header[5];
+	uint16_t frame_header_len;
 
 	/* Work */
 	struct modem_cmux_work_delayable process_received;
