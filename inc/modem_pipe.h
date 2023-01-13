@@ -36,7 +36,7 @@ struct modem_pipe_driver_api {
 };
 
 struct modem_pipe {
-	void* data;
+	void *data;
 	struct modem_pipe_driver_api *api;
 };
 

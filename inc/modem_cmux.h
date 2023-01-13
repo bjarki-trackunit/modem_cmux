@@ -47,7 +47,7 @@ struct modem_cmux_event {
  * @brief Event handler invoked when CMUX event occurs
  * @warning The priority of the context invoking this event (calling modem_cmux_process()) must be
  * equal to or higher than the context which owns the CMUX context.
-*/
+ */
 typedef void (*modem_cmux_event_handler_t)(struct modem_cmux *cmux, struct modem_cmux_event event,
 					   void *user_data);
 
@@ -56,6 +56,18 @@ enum modem_cmux_dlci_state {
 	MODEM_CMUX_DLCI_STATE_OPENING,
 	MODEM_CMUX_DLCI_STATE_OPEN,
 	MODEM_CMUX_DLCI_STATE_CLOSING,
+};
+
+enum modem_cmux_receive_state {
+	MODEM_CMUX_RECEIVE_STATE_SOF = 0,
+	MODEM_CMUX_RECEIVE_STATE_ADDRESS,
+	MODEM_CMUX_RECEIVE_STATE_ADDRESS_CONT,
+	MODEM_CMUX_RECEIVE_STATE_CONTROL,
+	MODEM_CMUX_RECEIVE_STATE_LENGTH,
+	MODEM_CMUX_RECEIVE_STATE_LENGTH_CONT,
+	MODEM_CMUX_RECEIVE_STATE_DATA,
+	MODEM_CMUX_RECEIVE_STATE_FCS,
+	MODEM_CMUX_RECEIVE_STATE_EOF,
 };
 
 /**
@@ -126,13 +138,22 @@ struct modem_cmux {
 	/* Status */
 	enum modem_cmux_state state;
 
+	/* Receive state*/
+	enum modem_cmux_receive_state receive_state;
+
 	/* Receive buffer */
 	uint8_t *receive_buf;
 	uint16_t receive_buf_size;
-	uint16_t receive_buf_cnt;
+	uint16_t receive_buf_len;
+
+	/* Work buffer */
+	uint8_t work_buf[64];
+	uint16_t work_buf_len;
 
 	/* Received frame */
 	struct modem_cmux_frame frame;
+	uint8_t frame_header[5];
+	uint16_t frame_header_len;
 
 	/* Work */
 	struct modem_cmux_work_delayable process_received;
@@ -176,7 +197,7 @@ int modem_cmux_connect(struct modem_cmux *cmux, struct modem_pipe *pipe);
  * @param dlci_address DLCI channel address
  * @param receive_buf Receive buffer used by pipe
  * @param receive_buf_size Size of receive buffer used by pipe
-*/
+ */
 struct modem_cmux_dlci_config {
 	uint16_t dlci_address;
 	uint8_t *receive_buf;

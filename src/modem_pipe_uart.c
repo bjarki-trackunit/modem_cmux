@@ -21,7 +21,7 @@ static void modem_pipe_uart_invoke_receive_ready_event(struct modem_pipe_uart *c
 	}
 
 	context->pipe_event_handler(context->pipe, MODEM_PIPE_EVENT_RECEIVE_READY,
-			       context->pipe_event_handler_user_data);
+				    context->pipe_event_handler_user_data);
 }
 
 static void modem_pipe_uart_irq_handler_rx_ready(struct modem_pipe_uart *context)
@@ -87,7 +87,7 @@ static void modem_pipe_uart_irq_handler_tx_ready(struct modem_pipe_uart *context
 
 static void modem_pipe_uart_irq_handler(const struct device *uart, void *user_data)
 {
-	struct modem_pipe_uart *context = (struct modem_pipe_uart*)user_data;
+	struct modem_pipe_uart *context = (struct modem_pipe_uart *)user_data;
 
 	if (uart_irq_update(uart) != 1) {
 		return;
@@ -204,11 +204,8 @@ int modem_pipe_uart_init(struct modem_pipe_uart *context,
 	}
 
 	/* Validate config */
-	if ((config->uart == NULL) ||
-	    (config->rx_buf == NULL) ||
-	    (config->rx_buf_size < 1) ||
-	    (config->tx_buf == NULL) ||
-	    (config->tx_buf_size < 1)) {
+	if ((config->uart == NULL) || (config->rx_buf == NULL) || (config->rx_buf_size < 1) ||
+	    (config->tx_buf == NULL) || (config->tx_buf_size < 1)) {
 		return -EINVAL;
 	}
 

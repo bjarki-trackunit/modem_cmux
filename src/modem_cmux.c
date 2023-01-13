@@ -14,53 +14,53 @@ LOG_MODULE_REGISTER(modem_cmux);
 #include "modem_cmux.h"
 
 #define MODEM_CMUX_N1 256 /* default I frame size, GSM 07.10 ch 6.2.2.1 */
-#define MODEM_CMUX_N2 3   /* retry 3 times */
+#define MODEM_CMUX_N2 3	  /* retry 3 times */
 
 #define MODEM_CMUX_FCS_POLYNOMIAL 0xE0 /* reversed crc8 */
 #define MODEM_CMUX_FCS_INIT_VALUE 0xFF
 
-#define MODEM_CMUX_EA 0x01  /* Extension bit      */
-#define MODEM_CMUX_CR 0x02  /* Command / Response */
-#define MODEM_CMUX_PF 0x10  /* Poll / Final       */
+#define MODEM_CMUX_EA 0x01 /* Extension bit      */
+#define MODEM_CMUX_CR 0x02 /* Command / Response */
+#define MODEM_CMUX_PF 0x10 /* Poll / Final       */
 
 /* Frame types sent to and from bus */
-#define MODEM_CMUX_FRAME_TYPE_RR      0x01  /* Receive Ready                            */
-#define MODEM_CMUX_FRAME_TYPE_UI      0x03  /* Unnumbered Information                   */
-#define MODEM_CMUX_FRAME_TYPE_RNR     0x05  /* Receive Not Ready                        */
-#define MODEM_CMUX_FRAME_TYPE_REJ     0x09  /* Reject                                   */
-#define MODEM_CMUX_FRAME_TYPE_DM      0x0F  /* Disconnected Mode                        */
-#define MODEM_CMUX_FRAME_TYPE_SABM    0x2F  /* Set Asynchronous Balanced Mode           */
-#define MODEM_CMUX_FRAME_TYPE_DISC    0x43  /* Disconnect                               */
-#define MODEM_CMUX_FRAME_TYPE_UA      0x63  /* Unnumbered Acknowledgement               */
-#define MODEM_CMUX_FRAME_TYPE_UIH     0xEF  /* Unnumbered Information with Header check */
+#define MODEM_CMUX_FRAME_TYPE_RR   0x01 /* Receive Ready                            */
+#define MODEM_CMUX_FRAME_TYPE_UI   0x03 /* Unnumbered Information                   */
+#define MODEM_CMUX_FRAME_TYPE_RNR  0x05 /* Receive Not Ready                        */
+#define MODEM_CMUX_FRAME_TYPE_REJ  0x09 /* Reject                                   */
+#define MODEM_CMUX_FRAME_TYPE_DM   0x0F /* Disconnected Mode                        */
+#define MODEM_CMUX_FRAME_TYPE_SABM 0x2F /* Set Asynchronous Balanced Mode           */
+#define MODEM_CMUX_FRAME_TYPE_DISC 0x43 /* Disconnect                               */
+#define MODEM_CMUX_FRAME_TYPE_UA   0x63 /* Unnumbered Acknowledgement               */
+#define MODEM_CMUX_FRAME_TYPE_UIH  0xEF /* Unnumbered Information with Header check */
 
 /* Commands sent in UIH frames on control channel */
-#define MODEM_CMUX_CMD_NSC    0x08  /* Non Supported Command Response           */
-#define MODEM_CMUX_CMD_TEST   0x10  /* Test Command                             */
-#define MODEM_CMUX_CMD_PSC    0x20  /* Power Saving Control                     */
-#define MODEM_CMUX_CMD_RLS    0x28  /* Remote Line Status Command               */
-#define MODEM_CMUX_CMD_FCOFF  0x30  /* Flow Control Off Command                 */
-#define MODEM_CMUX_CMD_PN     0x40  /* DLC parameter negotiation                */
-#define MODEM_CMUX_CMD_RPN    0x48  /* Remote Port Negotiation Command          */
-#define MODEM_CMUX_CMD_FCON   0x50  /* Flow Control On Command                  */
-#define MODEM_CMUX_CMD_CLD    0x60  /* Multiplexer close down                   */
-#define MODEM_CMUX_CMD_SNC    0x68  /* Service Negotiation Command              */
-#define MODEM_CMUX_CMD_MSC    0x70  /* Modem Status Command                     */
+#define MODEM_CMUX_CMD_NSC   0x08 /* Non Supported Command Response           */
+#define MODEM_CMUX_CMD_TEST  0x10 /* Test Command                             */
+#define MODEM_CMUX_CMD_PSC   0x20 /* Power Saving Control                     */
+#define MODEM_CMUX_CMD_RLS   0x28 /* Remote Line Status Command               */
+#define MODEM_CMUX_CMD_FCOFF 0x30 /* Flow Control Off Command                 */
+#define MODEM_CMUX_CMD_PN    0x40 /* DLC parameter negotiation                */
+#define MODEM_CMUX_CMD_RPN   0x48 /* Remote Port Negotiation Command          */
+#define MODEM_CMUX_CMD_FCON  0x50 /* Flow Control On Command                  */
+#define MODEM_CMUX_CMD_CLD   0x60 /* Multiplexer close down                   */
+#define MODEM_CMUX_CMD_SNC   0x68 /* Service Negotiation Command              */
+#define MODEM_CMUX_CMD_MSC   0x70 /* Modem Status Command                     */
 
 /*************************************************************************************************
  * Definitions
  *************************************************************************************************/
-#define MODEM_CMUX_F_MARKER                         (0xF9)
-#define MODEM_CMUX_DLCI_ADDRESS_MIN                 (1U)
-#define MODEM_CMUX_DLCI_ADDRESS_MAX                 (32767U)
-#define MODEM_CMUX_FRAME_SIZE_MIN                   (6U)
-#define MODEM_CMUX_FRAME_HEADER_SIZE_MAX            (6U)
-#define MODEM_CMUX_FRAME_TAIL_SIZE                  (2U)
-#define MODEM_CMUX_RECEIVE_BUF_SIZE_MIN             (128U + MODEM_CMUX_FRAME_HEADER_SIZE_MAX + \
-					             MODEM_CMUX_FRAME_TAIL_SIZE)
-#define MODEM_CMUX_DLCI_RECEIVE_BUF_SIZE_MIN        (MODEM_CMUX_FRAME_HEADER_SIZE_MAX + \
-                                                     MODEM_CMUX_FRAME_TAIL_SIZE)
-#define MODEM_CMUX_FRAME_TRANSMIT_INTERVAL_MIN_MS   (10U)
+#define MODEM_CMUX_F_MARKER		 (0xF9)
+#define MODEM_CMUX_DLCI_ADDRESS_MIN	 (1U)
+#define MODEM_CMUX_DLCI_ADDRESS_MAX	 (32767U)
+#define MODEM_CMUX_FRAME_SIZE_MIN	 (6U)
+#define MODEM_CMUX_FRAME_HEADER_SIZE_MAX (6U)
+#define MODEM_CMUX_FRAME_TAIL_SIZE	 (2U)
+#define MODEM_CMUX_RECEIVE_BUF_SIZE_MIN                                                            \
+	(128U + MODEM_CMUX_FRAME_HEADER_SIZE_MAX + MODEM_CMUX_FRAME_TAIL_SIZE)
+#define MODEM_CMUX_DLCI_RECEIVE_BUF_SIZE_MIN                                                       \
+	(MODEM_CMUX_FRAME_HEADER_SIZE_MAX + MODEM_CMUX_FRAME_TAIL_SIZE)
+#define MODEM_CMUX_FRAME_TRANSMIT_INTERVAL_MIN_MS (10U)
 
 #define MODEM_CMUX_EVENT_BUS_PIPE_RECEIVE_READY_BIT (0)
 
@@ -75,7 +75,6 @@ struct modem_cmux_frame_encoded {
 	uint8_t tail[MODEM_CMUX_FRAME_TAIL_SIZE];
 	uint8_t tail_len;
 };
-
 
 /*************************************************************************************************
  * Logging helpers
@@ -96,8 +95,7 @@ static void modem_cmux_log_unknown_frame(struct modem_cmux *cmux)
 	LOG_DBG("ch:%u, type:%u, data:%s", cmux->frame.dlci_address, cmux->frame.type, data);
 }
 
-
-/*************************************************************************************************
+/************************************************************************************************
  * Static non-threadsafe helpers
  *************************************************************************************************/
 static void modem_cmux_dlci_pipe_raise_event(struct modem_cmux_dlci *dlci,
@@ -211,7 +209,8 @@ static void modem_cmux_bus_event_handler(struct modem_pipe *pipe, enum modem_pip
 	}
 }
 
-static int modem_cmux_bus_write(struct modem_cmux *cmux, const uint8_t *data, size_t size) {
+static int modem_cmux_bus_write(struct modem_cmux *cmux, const uint8_t *data, size_t size)
+{
 	int ret;
 	size_t sent = 0;
 
@@ -240,7 +239,8 @@ static int modem_cmux_bus_write_frame_encode(const struct modem_cmux_frame *fram
 
 	/* DLCI Address */
 	if (63 < frame->dlci_address) {
-		encoded->header[pos] = (((uint8_t)frame->cr) << 1) | ((uint8_t)(frame->dlci_address << 2));
+		encoded->header[pos] =
+			(((uint8_t)frame->cr) << 1) | ((uint8_t)(frame->dlci_address << 2));
 		pos++;
 
 		encoded->header[pos] = ((uint8_t)(frame->dlci_address >> 6));
@@ -277,14 +277,14 @@ static int modem_cmux_bus_write_frame_encode(const struct modem_cmux_frame *fram
 
 	/* FCS */
 	if (frame->type == MODEM_CMUX_FRAME_TYPE_UIH) {
-		encoded->tail[0] = 0xFF - crc8(&encoded->header[1], (encoded->header_len - 1),
-					       MODEM_CMUX_FCS_POLYNOMIAL,
-					       MODEM_CMUX_FCS_INIT_VALUE, true);
+		encoded->tail[0] =
+			0xFF - crc8(&encoded->header[1], (encoded->header_len - 1),
+				    MODEM_CMUX_FCS_POLYNOMIAL, MODEM_CMUX_FCS_INIT_VALUE, true);
 	} else {
-		encoded->tail[0] = 0xFF - crc8(&encoded->header[1],
-					       (encoded->header_len - 1 + encoded->data_len),
-						MODEM_CMUX_FCS_POLYNOMIAL,
-						MODEM_CMUX_FCS_INIT_VALUE, true);
+		encoded->tail[0] =
+			0xFF - crc8(&encoded->header[1],
+				    (encoded->header_len - 1 + encoded->data_len),
+				    MODEM_CMUX_FCS_POLYNOMIAL, MODEM_CMUX_FCS_INIT_VALUE, true);
 	}
 
 	/* EOF */
@@ -294,7 +294,8 @@ static int modem_cmux_bus_write_frame_encode(const struct modem_cmux_frame *fram
 	return 0;
 }
 
-static int modem_cmux_bus_write_frame(struct modem_cmux *cmux, const struct modem_cmux_frame *frame) {
+static int modem_cmux_bus_write_frame(struct modem_cmux *cmux, const struct modem_cmux_frame *frame)
+{
 	int ret;
 	struct modem_cmux_frame_encoded encoded;
 
@@ -328,116 +329,15 @@ static int modem_cmux_bus_pipe_receive(struct modem_cmux *cmux)
 {
 	int ret;
 
-	ret = modem_pipe_receive(cmux->pipe, &cmux->receive_buf[cmux->receive_buf_cnt],
-				 (cmux->receive_buf_size - cmux->receive_buf_cnt));
-	if (ret < 1) {
-		return -EAGAIN;
+	ret = modem_pipe_receive(cmux->pipe, cmux->work_buf, sizeof(cmux->work_buf));
+
+	if (ret < 0) {
+		return ret;
 	}
 
-	cmux->receive_buf_cnt += (uint16_t)ret;
+	cmux->work_buf_len = (uint16_t)ret;
 
-	return 0;
-}
-
-/* Discard cnt bytes from receive buffer */
-static int modem_cmux_receive_buffer_discard(struct modem_cmux *cmux, uint16_t cnt)
-{
-	uint16_t keep_cnt = cmux->receive_buf_cnt - cnt;
-	uint16_t keep_start = cmux->receive_buf_cnt - keep_cnt;
-
-	for (uint16_t i = 0; i < keep_cnt; i++) {
-		cmux->receive_buf[i] = cmux->receive_buf[keep_start + i];
-	}
-
-	cmux->receive_buf_cnt = keep_cnt;
-
-	return 0;
-}
-
-/*
- * Return -EINVAL if data in buffer is corrupted
- * Return -EAGAIN if data in buffer is incomplete
- * Return  Size of frame if it was decoded succesfully
- */
-static int modem_cmux_bus_decode_frame(struct modem_cmux *cmux)
-{
-	uint16_t pos = 0;
-	uint8_t fcs;
-	uint16_t size;
-
-	/* Validate first byte is SOF */
-	if (cmux->receive_buf[pos] != MODEM_CMUX_F_MARKER) {
-		return -EINVAL;
-	}
-
-	pos++;
-
-	/* Validate received minimum data required for complete frame */
-	if (cmux->receive_buf_cnt < MODEM_CMUX_FRAME_SIZE_MIN) {
-		return -EAGAIN;
-	}
-
-	/* Decode CR */
-	cmux->frame.cr = (cmux->receive_buf[pos] & 0x02) ? true : false;
-
-	/* Decide DLCI address */
-	if (cmux->receive_buf[pos] & 0x01) {
-		cmux->frame.dlci_address = (cmux->receive_buf[pos] >> 2) & 0x3F;
-		pos++;
-	} else {
-		cmux->frame.dlci_address = (cmux->receive_buf[pos] >> 2) & 0x3F;
-		pos++;
-		cmux->frame.dlci_address |= ((uint16_t)cmux->receive_buf[2]) << 6;
-		pos++;
-	}
-
-	/* Decode frame type */
-	cmux->frame.type = cmux->receive_buf[pos] & (~MODEM_CMUX_PF);
-	cmux->frame.pf = (cmux->receive_buf[pos] & MODEM_CMUX_PF) ? true : false;
-	pos++;
-
-	/* Decode data length */
-	if (cmux->receive_buf[pos] & 0x01) {
-		cmux->frame.data_len = cmux->receive_buf[pos] >> 1;
-		pos++;
-	} else {
-		cmux->frame.data_len = cmux->receive_buf[pos] >> 1;
-		pos++;
-		cmux->frame.data_len |= ((uint16_t)cmux->receive_buf[pos]) << 7;
-		pos++;
-	}
-
-	/* Point to start of data */
-	cmux->frame.data = &cmux->receive_buf[pos];
-
-	/* Determine size of frame */
-	size = pos + cmux->frame.data_len + MODEM_CMUX_FRAME_TAIL_SIZE;
-
-	/* Validate size min */
-	if (cmux->receive_buf_cnt < size) {
-		return -EAGAIN;
-	}
-
-	/* Validate end of frame */
-	if (cmux->receive_buf[size - 1] != MODEM_CMUX_F_MARKER) {
-		return -EINVAL;
-	}
-
-	/* Compute FCS */
-	if (cmux->frame.type == MODEM_CMUX_FRAME_TYPE_UIH) {
-		fcs = 0xFF - crc8(&cmux->receive_buf[1], (pos - 1), MODEM_CMUX_FCS_POLYNOMIAL,
-				  MODEM_CMUX_FCS_INIT_VALUE, true);
-	} else {
-		fcs = 0xFF - crc8(&cmux->receive_buf[1], (size - 3),
-				  MODEM_CMUX_FCS_POLYNOMIAL, MODEM_CMUX_FCS_INIT_VALUE, true);
-	}
-
-	/* Validate FCS */
-	if (cmux->receive_buf[size - 2] != fcs) {
-		return -EINVAL;
-	}
-
-	return (int)size;
+	return ret;
 }
 
 /*************************************************************************************************
@@ -449,10 +349,8 @@ static void modem_cmux_process_on_frame_received_ua_control(struct modem_cmux *c
 	cmux->state = MODEM_CMUX_STATE_CONNECTED;
 
 	/* Notify cmux state updated */
-	struct modem_cmux_event cmux_event = {
-		.dlci_address = 0,
-		.type = MODEM_CMUX_EVENT_CONNECTED
-	};
+	struct modem_cmux_event cmux_event = {.dlci_address = 0,
+					      .type = MODEM_CMUX_EVENT_CONNECTED};
 
 	modem_cmux_raise_event(cmux, cmux_event);
 
@@ -474,10 +372,8 @@ static void modem_cmux_process_on_frame_received_ua(struct modem_cmux *cmux)
 		dlci->state = MODEM_CMUX_DLCI_STATE_OPEN;
 
 		/* Notify CMXU DLCI channel state changed */
-		struct modem_cmux_event cmux_event = {
-			.dlci_address = cmux->frame.dlci_address,
-			.type = MODEM_CMUX_EVENT_OPENED
-		};
+		struct modem_cmux_event cmux_event = {.dlci_address = cmux->frame.dlci_address,
+						      .type = MODEM_CMUX_EVENT_OPENED};
 
 		modem_cmux_raise_event(cmux, cmux_event);
 
@@ -486,10 +382,8 @@ static void modem_cmux_process_on_frame_received_ua(struct modem_cmux *cmux)
 
 	if (dlci->state == MODEM_CMUX_DLCI_STATE_CLOSING) {
 		/* Notify CMXU DLCI channel state changed */
-		struct modem_cmux_event cmux_event = {
-			.dlci_address = cmux->frame.dlci_address,
-			.type = MODEM_CMUX_EVENT_CLOSED
-		};
+		struct modem_cmux_event cmux_event = {.dlci_address = cmux->frame.dlci_address,
+						      .type = MODEM_CMUX_EVENT_CLOSED};
 
 		modem_cmux_raise_event(cmux, cmux_event);
 
@@ -508,18 +402,14 @@ static void modem_cmux_process_on_frame_received_uih_control(struct modem_cmux *
 	/* Modem CMUX disconnected */
 	if (cmux->frame.data_len == 2) {
 		if ((cmux->frame.data[0] == ((((uint8_t)MODEM_CMUX_CMD_CLD) << 1) | 0x01)) &&
-		    (cmux->frame.data[1] == 0x01) &&
-		    (cmux->frame.cr == true) &&
-		    (cmux->frame.pf == false) &&
-		    (cmux->state == MODEM_CMUX_STATE_DISCONNECTING)) {
+		    (cmux->frame.data[1] == 0x01) && (cmux->frame.cr == true) &&
+		    (cmux->frame.pf == false) && (cmux->state == MODEM_CMUX_STATE_DISCONNECTING)) {
 			/* Update CMUX state */
 			cmux->state = MODEM_CMUX_STATE_DISCONNECTED;
 
 			/* Notify CMUX state changed */
 			struct modem_cmux_event cmux_event = {
-				.dlci_address = 0,
-				.type = MODEM_CMUX_EVENT_DISCONNECTED
-			};
+				.dlci_address = 0, .type = MODEM_CMUX_EVENT_DISCONNECTED};
 
 			modem_cmux_raise_event(cmux, cmux_event);
 
@@ -534,13 +424,10 @@ static void modem_cmux_process_on_frame_received_uih_control(struct modem_cmux *
 	/* Modem status event */
 	if (cmux->frame.data_len == 4) {
 		if ((cmux->frame.data[0] == ((((uint8_t)MODEM_CMUX_CMD_MSC) << 1) | 0x03)) &&
-		    (cmux->frame.cr == false) &&
-		    (cmux->frame.pf == true)) {
+		    (cmux->frame.cr == false) && (cmux->frame.pf == true)) {
 			/* Notify CMUX event occured */
 			struct modem_cmux_event cmux_event = {
-				.dlci_address = 0,
-				.type = MODEM_CMUX_EVENT_MODEM_STATUS
-			};
+				.dlci_address = 0, .type = MODEM_CMUX_EVENT_MODEM_STATUS};
 
 			modem_cmux_raise_event(cmux, cmux_event);
 
@@ -554,13 +441,10 @@ static void modem_cmux_process_on_frame_received_uih_control(struct modem_cmux *
 	/* Modem status event */
 	if (cmux->frame.data_len == 4) {
 		if ((cmux->frame.data[0] == ((((uint8_t)MODEM_CMUX_CMD_MSC) << 1) | 0x01)) &&
-		    (cmux->frame.cr == true) &&
-		    (cmux->frame.pf == true)) {
+		    (cmux->frame.cr == true) && (cmux->frame.pf == true)) {
 			/* Notify CMUX event occured */
 			struct modem_cmux_event cmux_event = {
-				.dlci_address = 0,
-				.type = MODEM_CMUX_EVENT_MODEM_STATUS
-			};
+				.dlci_address = 0, .type = MODEM_CMUX_EVENT_MODEM_STATUS};
 
 			modem_cmux_raise_event(cmux, cmux_event);
 
@@ -627,43 +511,194 @@ static void modem_cmux_process_on_frame_received(struct modem_cmux *cmux)
 	}
 }
 
+static void modem_cmux_process_received_byte(struct modem_cmux *cmux, uint8_t byte)
+{
+	switch (cmux->receive_state) {
+	case MODEM_CMUX_RECEIVE_STATE_SOF:
+		if (byte == MODEM_CMUX_F_MARKER) {
+			LOG_DBG("Receiving frame");
+
+			/* Initialize */
+			cmux->receive_buf_len = 0;
+			cmux->frame_header_len = 0;
+
+			/* Await address */
+			cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_ADDRESS;
+		}
+
+		break;
+
+	case MODEM_CMUX_RECEIVE_STATE_ADDRESS:
+		/* Store header for FCS */
+		cmux->frame_header[cmux->frame_header_len] = byte;
+		cmux->frame_header_len++;
+
+		/* Get CR */
+		cmux->frame.cr = (byte & 0x02) ? true : false;
+
+		/* Get DLCI address */
+		cmux->frame.dlci_address = (byte >> 2) & 0x3F;
+
+		/* Await control */
+		cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_CONTROL;
+
+		break;
+
+	case MODEM_CMUX_RECEIVE_STATE_CONTROL:
+		/* Store header for FCS */
+		cmux->frame_header[cmux->frame_header_len] = byte;
+		cmux->frame_header_len++;
+
+		/* Get PF */
+		cmux->frame.pf = (byte & MODEM_CMUX_PF) ? true : false;
+
+		/* Get frame type */
+		cmux->frame.type = byte & (~MODEM_CMUX_PF);
+
+		/* Await data length */
+		cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_LENGTH;
+
+		break;
+
+	case MODEM_CMUX_RECEIVE_STATE_LENGTH:
+		/* Store header for FCS */
+		cmux->frame_header[cmux->frame_header_len] = byte;
+		cmux->frame_header_len++;
+
+		/* Get first 7 bits of data length */
+		cmux->frame.data_len = (byte >> 1);
+
+		/* Check if length field continues */
+		if ((byte & MODEM_CMUX_EA) == 0) {
+			/* Await continued length field */
+			cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_LENGTH_CONT;
+
+			break;
+		}
+
+		/* Check if no data field */
+		if (cmux->frame.data_len == 0) {
+			/* Await FCS */
+			cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_FCS;
+
+			break;
+		}
+
+		/* Await data */
+		cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_DATA;
+
+		break;
+
+	case MODEM_CMUX_RECEIVE_STATE_LENGTH_CONT:
+		/* Store header for FCS */
+		cmux->frame_header[cmux->frame_header_len] = byte;
+		cmux->frame_header_len++;
+
+		/* Get last 8 bits of data length */
+		cmux->frame.data_len |= ((uint16_t)byte) << 7;
+
+		/* Await data */
+		cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_DATA;
+
+		break;
+
+	case MODEM_CMUX_RECEIVE_STATE_DATA:
+		/* Copy byte to data */
+		cmux->receive_buf[cmux->receive_buf_len] = byte;
+		cmux->receive_buf_len++;
+
+		/* Check if datalen reached */
+		if (cmux->frame.data_len == cmux->receive_buf_len) {
+			/* Await FCS */
+			cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_FCS;
+
+			break;
+		}
+
+		/* Check if receive buffer overrun */
+		if (cmux->receive_buf_len == cmux->receive_buf_size) {
+			LOG_DBG("Receive buf overrun");
+
+			/* Drop frame */
+			cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_EOF;
+
+			break;
+		}
+
+		break;
+
+	case MODEM_CMUX_RECEIVE_STATE_FCS:
+		uint8_t fcs;
+
+		/* Compute FCS */
+		if (cmux->frame.type == MODEM_CMUX_FRAME_TYPE_UIH) {
+			fcs = 0xFF - crc8(cmux->frame_header, cmux->frame_header_len,
+					  MODEM_CMUX_FCS_POLYNOMIAL, MODEM_CMUX_FCS_INIT_VALUE,
+					  true);
+		} else {
+			/* FIX ME */
+			fcs = 0xFF - crc8(cmux->frame_header, cmux->frame_header_len,
+					  MODEM_CMUX_FCS_POLYNOMIAL, MODEM_CMUX_FCS_INIT_VALUE,
+					  true);
+		}
+
+		/* Validate FCS */
+		#if 0
+		TODO("Issue with at+qeng=\"servingcell\"")
+		if (fcs != byte) {
+			LOG_DBG("Frame FCS err");
+
+			/* Drop frame */
+			cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_SOF;
+
+			break;
+		}
+		#endif
+
+		cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_EOF;
+
+		break;
+
+	case MODEM_CMUX_RECEIVE_STATE_EOF:
+		/* Validate byte is EOF */
+		if (byte != MODEM_CMUX_F_MARKER) {
+			/* Unexpected byte */
+			cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_SOF;
+
+			break;
+		}
+
+		LOG_DBG("Received frame");
+
+		/* Process frame */
+		cmux->frame.data = cmux->receive_buf;
+		modem_cmux_process_on_frame_received(cmux);
+
+		/* Await start of next frame */
+		cmux->receive_state = MODEM_CMUX_RECEIVE_STATE_SOF;
+
+		break;
+
+	default:
+		break;
+	}
+}
+
+static void modem_cmux_process_received_bytes(struct modem_cmux *cmux)
+{
+	for (uint16_t i = 0; i < cmux->work_buf_len; i++) {
+		modem_cmux_process_received_byte(cmux, cmux->work_buf[i]);
+	}
+}
+
 static void modem_cmux_process_received(struct k_work *item)
 {
-        struct modem_cmux_work_delayable *cmux_process = (struct modem_cmux_work_delayable *)item;
-        struct modem_cmux *cmux = cmux_process->cmux;
-        int ret;
+	struct modem_cmux_work_delayable *cmux_process = (struct modem_cmux_work_delayable *)item;
+	struct modem_cmux *cmux = cmux_process->cmux;
 
-	/* Receive from bus pipe */
-	ret = modem_cmux_bus_pipe_receive(cmux);
-	if (ret < 0) {
-		return;
-	}
-
-	/* Decode all complete frames in receive buffer */
-	while (0 < cmux->receive_buf_cnt) {
-		/* Try to decode frame */
-		ret = modem_cmux_bus_decode_frame(cmux);
-
-		/* Check if frame incomplete */
-		if (ret == -EAGAIN) {
-			return;
-		}
-
-		/* Check if frame corrupt */
-		if (ret == -EINVAL) {
-			/* Reset receive buffer */
-			cmux->receive_buf_cnt = 0;
-
-			return;
-		}
-
-		/* Check if complete frame received */
-		if (0 < ret) {
-			modem_cmux_process_on_frame_received(cmux);
-		}
-
-		/* Discard received frame out of receive buffer */
-		modem_cmux_receive_buffer_discard(cmux, (uint16_t)ret);
+	/* Receive and process all available data from bus pipe */
+	while (modem_cmux_bus_pipe_receive(cmux) > 0) {
+		modem_cmux_process_received_bytes(cmux);
 	}
 }
 
@@ -687,8 +722,7 @@ static int modem_cmux_dlci_pipe_event_handler_set(struct modem_pipe *pipe,
 	return 0;
 }
 
-static int modem_cmux_dlci_pipe_transmit(struct modem_pipe *pipe, const uint8_t *buf,
-					 uint32_t size)
+static int modem_cmux_dlci_pipe_transmit(struct modem_pipe *pipe, const uint8_t *buf, uint32_t size)
 {
 	struct modem_cmux_dlci *dlci = (struct modem_cmux_dlci *)pipe->data;
 	struct modem_cmux *cmux = dlci->cmux;
@@ -715,8 +749,7 @@ static int modem_cmux_dlci_pipe_transmit(struct modem_pipe *pipe, const uint8_t 
 	return size;
 }
 
-static int modem_cmux_dlci_pipe_receive(struct modem_pipe *pipe, uint8_t *buf,
-					uint32_t size)
+static int modem_cmux_dlci_pipe_receive(struct modem_pipe *pipe, uint8_t *buf, uint32_t size)
 {
 	struct modem_cmux_dlci *dlci = (struct modem_cmux_dlci *)pipe->data;
 	uint32_t ret;
@@ -771,12 +804,9 @@ int modem_cmux_init(struct modem_cmux *cmux, const struct modem_cmux_config *con
 	}
 
 	/* Validate config */
-	if ((config->event_handler == NULL) ||
-	    (config->dlcis == NULL) ||
-	    (config->dlcis_cnt == 0) ||
-	    (config->receive_buf == NULL) ||
-	    (config->receive_buf_size == 0)
-	    ) {
+	if ((config->event_handler == NULL) || (config->dlcis == NULL) ||
+	    (config->dlcis_cnt == 0) || (config->receive_buf == NULL) ||
+	    (config->receive_buf_size == 0)) {
 		return -EINVAL;
 	}
 
