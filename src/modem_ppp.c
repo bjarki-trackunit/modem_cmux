@@ -7,15 +7,43 @@
 #include "modem_ppp.h"
 
 LOG_MODULE_REGISTER(modem_ppp, 4);
+/*********************************************************
+ * DEFINES / MACROS
+ *********************************************************/
+#define MODEM_PPP_FRAME_SOF		    (0x7E)
+#define MODEM_PPP_FRAME_ESCAPE		    (0x7D)
+#define MODEM_PPP_FRAME_SOF_SIZE	    (1)
+#define MODEM_PPP_FRAME_WRAPPED_HEADER_SIZE (3)
+#define MODEM_PPP_FRAME_TAIL_SIZE	    (2)
 
-#define MODEM_PPP_FRAME_SOF                       (0x7E)
-#define MODEM_PPP_FRAME_ESCAPE                    (0x7D)
-#define MODEM_PPP_FRAME_SOF_SIZE                  (1)
-#define MODEM_PPP_FRAME_WRAPPED_HEADER_SIZE       (3)
-#define MODEM_PPP_FRAME_TAIL_SIZE                 (2)
+/*********************************************************
+ * TYPE DEFINITIONS
+ *********************************************************/
 
+/*********************************************************
+ * LOCAL FUNCTIONS DECLARATION
+ *********************************************************/
+static int modem_ppp_get_protocol(uint8_t *protocol, struct net_pkt *pkt);
+static uint16_t modem_ppp_wrap_write_byte(uint8_t *buf, uint16_t size, uint8_t byte);
+static uint16_t modem_ppp_fcs_init(const uint8_t *buf, uint16_t len);
+static uint16_t modem_ppp_fcs_update(uint16_t fcs, const uint8_t *buf, uint16_t len);
+static void modem_ppp_fcs_final(uint8_t *fcs_bytes, uint16_t fcs);
+static int modem_ppp_wrap_net_pkt(struct modem_ppp *ppp, struct net_pkt *pkt);
+static int modem_ppp_send_net_pkt(struct modem_ppp *ppp);
+static bool modem_ppp_receive_data(struct modem_ppp *ppp);
+static void modem_ppp_process_received_byte(struct modem_ppp *ppp, uint8_t byte);
+static void modem_ppp_process_received_data(struct modem_ppp *ppp);
+static void modem_ppp_pipe_event_handler(struct modem_pipe *pipe, enum modem_pipe_event event,
+					 void *user_data);
+
+/*********************************************************
+ * LOCAL VARIABLES
+ *********************************************************/
 static const uint8_t ppp_frame_header[2] = {0xFF, 0x03};
 
+/*********************************************************
+ * LOCAL FUNCTIONS
+ *********************************************************/
 static int modem_ppp_get_protocol(uint8_t *protocol, struct net_pkt *pkt)
 {
 	if (net_pkt_is_ppp(pkt) == true) {
@@ -130,8 +158,10 @@ static int modem_ppp_wrap_net_pkt(struct modem_ppp *ppp, struct net_pkt *pkt)
 	pos++;
 
 	/* Write header to buffer */
-	pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos, ppp_frame_header[0]);
-	pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos, ppp_frame_header[1]);
+	pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos,
+					 ppp_frame_header[0]);
+	pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos,
+					 ppp_frame_header[1]);
 
 	/* Write protocol if neccesary */
 	if (ret == 0) {
@@ -139,8 +169,10 @@ static int modem_ppp_wrap_net_pkt(struct modem_ppp *ppp, struct net_pkt *pkt)
 		fcs = modem_ppp_fcs_update(fcs, protocol, sizeof(protocol));
 
 		/* Write protocol to buffer */
-		pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos, protocol[0]);
-		pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos, protocol[1]);
+		pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos,
+						 protocol[0]);
+		pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos,
+						 protocol[1]);
 	}
 
 	/* Update FCS with network packet buffer */
@@ -148,7 +180,8 @@ static int modem_ppp_wrap_net_pkt(struct modem_ppp *ppp, struct net_pkt *pkt)
 
 	/* Write network packet buffer to buffer */
 	for (uint16_t i = 0; i < pkt->buffer->len; i++) {
-		pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos, pkt->buffer->data[i]);
+		pos += modem_ppp_wrap_write_byte(&ppp->tx_buf[pos], ppp->tx_buf_size - pos,
+						 pkt->buffer->data[i]);
 	}
 
 	/* Finalize FCS */
@@ -244,7 +277,8 @@ static void modem_ppp_process_received_byte(struct modem_ppp *ppp, uint8_t byte)
 
 	case MODEM_PPP_RECEIVE_STATE_HDR_23:
 		if (byte == 0x23) {
-			ppp->pkt = net_pkt_rx_alloc_with_buffer(ppp->net_iface, 256, AF_UNSPEC, 0, K_NO_WAIT);
+			ppp->pkt = net_pkt_rx_alloc_with_buffer(ppp->net_iface, 256, AF_UNSPEC, 0,
+								K_NO_WAIT);
 
 			if (ppp->pkt == NULL) {
 				ppp->receive_state = MODEM_PPP_RECEIVE_STATE_HDR_SOF;
@@ -322,7 +356,7 @@ static void modem_ppp_process_received_data(struct modem_ppp *ppp)
 }
 
 static void modem_ppp_pipe_event_handler(struct modem_pipe *pipe, enum modem_pipe_event event,
-				  void *user_data)
+					 void *user_data)
 {
 	struct modem_ppp *ppp = (struct modem_ppp *)user_data;
 
@@ -347,6 +381,9 @@ static void modem_ppp_pipe_event_handler(struct modem_pipe *pipe, enum modem_pip
 	k_mutex_unlock(&ppp->lock);
 }
 
+/*********************************************************
+ * GLOBAL FUNCTIONS
+ *********************************************************/
 int modem_ppp_init(struct modem_ppp *ppp, struct modem_ppp_config *config)
 {
 	/* Validate arguments */
@@ -355,9 +392,7 @@ int modem_ppp_init(struct modem_ppp *ppp, struct modem_ppp_config *config)
 	}
 
 	/* Validate configuration */
-	if ((config->rx_buf == NULL) ||
-	    (config->rx_buf_size == 0) ||
-	    (config->tx_buf == NULL) ||
+	if ((config->rx_buf == NULL) || (config->rx_buf_size == 0) || (config->tx_buf == NULL) ||
 	    (config->tx_buf_size == 0)) {
 		return -EINVAL;
 	}

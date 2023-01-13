@@ -12,6 +12,37 @@ LOG_MODULE_REGISTER(modem_cmd);
 
 #include "modem_cmd.h"
 
+/*********************************************************
+ * DEFINES / MACROS
+ *********************************************************/
+
+/*********************************************************
+ * TYPE DEFINITIONS
+ *********************************************************/
+
+/*********************************************************
+ * LOCAL FUNCTIONS DECLARATION
+ *********************************************************/
+static void modem_cmd_parse_reset(struct modem_cmd *cmd);
+static void modem_cmd_parse_save_match(struct modem_cmd *cmd);
+static bool modem_cmd_parse_find_match(struct modem_cmd *cmd);
+static bool modem_cmd_parse_is_separator(struct modem_cmd *cmd);
+static bool modem_cmd_parse_end_del_start(struct modem_cmd *cmd);
+static bool modem_cmd_parse_end_del_complete(struct modem_cmd *cmd);
+static bool modem_cmd_parse_end_del_complete(struct modem_cmd *cmd);
+static bool modem_cmd_receive_bytes(struct modem_cmd *cmd);
+static void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte);
+static void modem_cmd_process(struct k_work *item);
+static void modem_cmd_pipe_event_handler(struct modem_pipe *pipe, enum modem_pipe_event event,
+				  void *user_data);
+
+/*********************************************************
+ * LOCAL VARIABLES
+ *********************************************************/
+
+/*********************************************************
+ * LOCAL FUNCTIONS
+ *********************************************************/
 static void modem_cmd_parse_reset(struct modem_cmd *cmd)
 {
 	cmd->receive_buf_len = 0;
@@ -128,11 +159,29 @@ static bool modem_cmd_parse_end_del_complete(struct modem_cmd *cmd)
 
 	/* Compare end delimiter with receive buffer content */
 	return (memcmp(&cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_size],
-		       cmd->delimiter, cmd->delimiter_size) == 0) ? true : false;
+		       cmd->delimiter, cmd->delimiter_size) == 0)
+		       ? true
+		       : false;
+}
+
+/* Receive chunk of bytes */
+static bool modem_cmd_receive_bytes(struct modem_cmd *cmd)
+{
+	int ret;
+
+	ret = modem_pipe_receive(cmd->pipe, cmd->work_buf, sizeof(cmd->work_buf));
+
+	if (ret < 1) {
+		return false;
+	}
+
+	cmd->work_buf_len = (uint16_t)ret;
+
+	return true;
 }
 
 /* Process byte */
-void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
+static void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 {
 	/* Validate receive buffer not overrun */
 	if (cmd->receive_buf_size == cmd->receive_buf_len) {
@@ -157,7 +206,9 @@ void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 
 		/* Check if trailing argument exists */
 		if (cmd->parse_arg_len > 0) {
-			cmd->argv[cmd->argc] = &cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_size - cmd->parse_arg_len];
+			cmd->argv[cmd->argc] =
+				&cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_size -
+						  cmd->parse_arg_len];
 			cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_size] = '\0';
 			cmd->argc++;
 		}
@@ -201,7 +252,8 @@ void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 			cmd->argv[cmd->argc] = "";
 		} else {
 			/* Save pointer to start of argument */
-			cmd->argv[cmd->argc] = &cmd->receive_buf[cmd->receive_buf_len - cmd->parse_arg_len - 1];
+			cmd->argv[cmd->argc] =
+				&cmd->receive_buf[cmd->receive_buf_len - cmd->parse_arg_len - 1];
 
 			/* Replace separator with string terminator */
 			cmd->receive_buf[cmd->receive_buf_len - 1] = '\0';
@@ -220,31 +272,15 @@ void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 	cmd->parse_arg_len++;
 }
 
-/* Receive chunk of bytes */
-static bool modem_cmd_receive_bytes(struct modem_cmd *cmd)
-{
-	int ret;
-
-	ret =  modem_pipe_receive(cmd->pipe, cmd->work_buf, sizeof(cmd->work_buf));
-
-	if (ret < 1) {
-		return false;
-	}
-
-	cmd->work_buf_len = (uint16_t)ret;
-
-	return true;
-}
-
 /* Process chunk of received bytes */
-void modem_cmd_process_bytes(struct modem_cmd *cmd)
+static void modem_cmd_process_bytes(struct modem_cmd *cmd)
 {
 	for (uint16_t i = 0; i < cmd->work_buf_len; i++) {
 		modem_cmd_process_byte(cmd, cmd->work_buf[i]);
 	}
 }
 
-void modem_cmd_process(struct k_work *item)
+static void modem_cmd_process(struct k_work *item)
 {
 	struct modem_cmd_process_item *process = (struct modem_cmd_process_item *)item;
 	struct modem_cmd *cmd = process->cmd;
@@ -256,7 +292,7 @@ void modem_cmd_process(struct k_work *item)
 	}
 }
 
-void modem_cmd_pipe_event_handler(struct modem_pipe *pipe, enum modem_pipe_event event,
+static void modem_cmd_pipe_event_handler(struct modem_pipe *pipe, enum modem_pipe_event event,
 				  void *user_data)
 {
 	struct modem_cmd *cmd = (struct modem_cmd *)user_data;
@@ -264,6 +300,9 @@ void modem_cmd_pipe_event_handler(struct modem_pipe *pipe, enum modem_pipe_event
 	k_work_reschedule(&cmd->process.dwork, cmd->process_timeout);
 }
 
+/*********************************************************
+ * GLOBAL FUNCTIONS
+ *********************************************************/
 int modem_cmd_init(struct modem_cmd *cmd, const struct modem_cmd_config *config)
 {
 	/* Validate arguments */
@@ -272,13 +311,9 @@ int modem_cmd_init(struct modem_cmd *cmd, const struct modem_cmd_config *config)
 	}
 
 	/* Validate config */
-	if ((config->receive_buf == NULL) ||
-	    (config->receive_buf_size == 0) ||
-	    (config->argv == NULL) ||
-	    (config->argv_size == 0) ||
-	    (config->delimiter == NULL) ||
-	    (config->delimiter_size == 0) ||
-	    (config->matches == NULL) ||
+	if ((config->receive_buf == NULL) || (config->receive_buf_size == 0) ||
+	    (config->argv == NULL) || (config->argv_size == 0) || (config->delimiter == NULL) ||
+	    (config->delimiter_size == 0) || (config->matches == NULL) ||
 	    (config->matches_size == 0)) {
 		return -EINVAL;
 	}
@@ -322,6 +357,22 @@ int modem_cmd_attach(struct modem_cmd *cmd, struct modem_pipe *pipe)
 	return modem_pipe_event_handler_set(pipe, modem_cmd_pipe_event_handler, cmd);
 }
 
+int modem_cmd_release(struct modem_cmd *cmd)
+{
+	if (cmd->pipe == NULL) {
+		return 0;
+	}
+
+	modem_pipe_event_handler_set(cmd->pipe, NULL, NULL);
+
+	cmd->pipe = NULL;
+
+	struct k_work_sync sync;
+	k_work_cancel_delayable_sync(&cmd->process.dwork, &sync);
+
+	return 0;
+}
+
 int modem_cmd_send(struct modem_cmd *cmd, const char *str)
 {
 	int ret;
@@ -355,7 +406,7 @@ int modem_cmd_send(struct modem_cmd *cmd, const char *str)
 }
 
 uint32_t modem_cmd_send_sync_event(struct modem_cmd *cmd, const char *str, struct k_event *event,
-			      uint32_t events, k_timeout_t timeout)
+				   uint32_t events, k_timeout_t timeout)
 {
 	int ret;
 
@@ -376,20 +427,4 @@ uint32_t modem_cmd_send_sync_event(struct modem_cmd *cmd, const char *str, struc
 
 	/* Await events or timeout */
 	return k_event_wait(event, events, false, timeout);
-}
-
-int modem_cmd_release(struct modem_cmd *cmd)
-{
-	if (cmd->pipe == NULL) {
-		return 0;
-	}
-
-	modem_pipe_event_handler_set(cmd->pipe, NULL, NULL);
-
-	cmd->pipe = NULL;
-
-	struct k_work_sync sync;
-	k_work_cancel_delayable_sync(&cmd->process.dwork, &sync);
-
-	return 0;
 }

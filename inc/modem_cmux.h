@@ -47,7 +47,7 @@ struct modem_cmux_event {
  * @brief Event handler invoked when CMUX event occurs
  * @warning The priority of the context invoking this event (calling modem_cmux_process()) must be
  * equal to or higher than the context which owns the CMUX context.
-*/
+ */
 typedef void (*modem_cmux_event_handler_t)(struct modem_cmux *cmux, struct modem_cmux_event event,
 					   void *user_data);
 
@@ -197,7 +197,7 @@ int modem_cmux_connect(struct modem_cmux *cmux, struct modem_pipe *pipe);
  * @param dlci_address DLCI channel address
  * @param receive_buf Receive buffer used by pipe
  * @param receive_buf_size Size of receive buffer used by pipe
-*/
+ */
 struct modem_cmux_dlci_config {
 	uint16_t dlci_address;
 	uint8_t *receive_buf;

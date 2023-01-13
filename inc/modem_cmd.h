@@ -60,33 +60,27 @@ struct modem_cmd_match {
 	bool matching;
 };
 
-#define MODEM_CMD_MATCH(_match, _separators, _callback)                 \
-	{                                                               \
-		.match = (uint8_t *)(_match),                           \
-		.match_size = (uint8_t)(sizeof(_match) - 1),            \
-		.separators = (uint8_t *)(_separators),                 \
-		.separators_size = (uint8_t)(sizeof(_separators) - 1),  \
-		.callback = _callback,                                  \
-		.wildcards = false,                                     \
-		.matching = false,                                      \
+#define MODEM_CMD_MATCH(_match, _separators, _callback)                                            \
+	{                                                                                          \
+		.match = (uint8_t *)(_match), .match_size = (uint8_t)(sizeof(_match) - 1),         \
+		.separators = (uint8_t *)(_separators),                                            \
+		.separators_size = (uint8_t)(sizeof(_separators) - 1), .callback = _callback,      \
+		.wildcards = false, .matching = false,                                             \
 	}
 
-#define MODEM_CMD_MATCH_WILDCARD(_match, _separators, _callback)        \
-	{                                                               \
-		.match = (uint8_t *)(_match),                           \
-		.match_size = (uint8_t)(sizeof(_match) - 1),            \
-		.separators = (uint8_t *)(_separators),                 \
-		.separators_size = (uint8_t)(sizeof(_separators) - 1),  \
-		.callback = _callback,                                  \
-		.wildcards = true,                                      \
-		.matching = false,                                      \
+#define MODEM_CMD_MATCH_WILDCARD(_match, _separators, _callback)                                   \
+	{                                                                                          \
+		.match = (uint8_t *)(_match), .match_size = (uint8_t)(sizeof(_match) - 1),         \
+		.separators = (uint8_t *)(_separators),                                            \
+		.separators_size = (uint8_t)(sizeof(_separators) - 1), .callback = _callback,      \
+		.wildcards = true, .matching = false,                                              \
 	}
 
 /**
  * @brief Process work item
  *
  * @note k_work struct must be placed first
-*/
+ */
 struct modem_cmd_process_item {
 	struct k_work_delayable dwork;
 	struct modem_cmd *cmd;
