@@ -236,7 +236,25 @@ static bool modem_cmd_parse_end_del_complete(struct modem_cmd *cmd)
 
 	/* Compare end delimiter with receive buffer content */
 	return (memcmp(&cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_size],
-		       cmd->delimiter, cmd->delimiter_size) == 0) ? true : false;
+		       cmd->delimiter, cmd->delimiter_size) == 0)
+		       ? true
+		       : false;
+}
+
+/* Receive chunk of bytes */
+static bool modem_cmd_receive_bytes(struct modem_cmd *cmd)
+{
+	int ret;
+
+	ret = modem_pipe_receive(cmd->pipe, cmd->work_buf, sizeof(cmd->work_buf));
+
+	if (ret < 1) {
+		return false;
+	}
+
+	cmd->work_buf_len = (uint16_t)ret;
+
+	return true;
 }
 
 static void modem_cmd_on_command_received_log(struct modem_cmd *cmd)
@@ -371,7 +389,9 @@ static void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 
 		/* Check if trailing argument exists */
 		if (cmd->parse_arg_len > 0) {
-			cmd->argv[cmd->argc] = &cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_size - cmd->parse_arg_len];
+			cmd->argv[cmd->argc] =
+				&cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_size -
+						  cmd->parse_arg_len];
 			cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_size] = '\0';
 			cmd->argc++;
 		}
@@ -414,7 +434,8 @@ static void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 			cmd->argv[cmd->argc] = "";
 		} else {
 			/* Save pointer to start of argument */
-			cmd->argv[cmd->argc] = &cmd->receive_buf[cmd->receive_buf_len - cmd->parse_arg_len - 1];
+			cmd->argv[cmd->argc] =
+				&cmd->receive_buf[cmd->receive_buf_len - cmd->parse_arg_len - 1];
 
 			/* Replace separator with string terminator */
 			cmd->receive_buf[cmd->receive_buf_len - 1] = '\0';
@@ -431,22 +452,6 @@ static void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 
 	/* Increment argument length */
 	cmd->parse_arg_len++;
-}
-
-/* Receive chunk of bytes */
-static bool modem_cmd_receive_bytes(struct modem_cmd *cmd)
-{
-	int ret;
-
-	ret =  modem_pipe_receive(cmd->pipe, cmd->work_buf, sizeof(cmd->work_buf));
-
-	if (ret < 1) {
-		return false;
-	}
-
-	cmd->work_buf_len = (uint16_t)ret;
-
-	return true;
 }
 
 /* Process chunk of received bytes */
@@ -477,6 +482,9 @@ static void modem_cmd_pipe_event_handler(struct modem_pipe *pipe, enum modem_pip
 	k_work_reschedule(&cmd->process_work.dwork, cmd->process_timeout);
 }
 
+/*********************************************************
+ * GLOBAL FUNCTIONS
+ *********************************************************/
 int modem_cmd_init(struct modem_cmd *cmd, const struct modem_cmd_config *config)
 {
 	/* Validate arguments */
@@ -625,7 +633,7 @@ int modem_cmd_send(struct modem_cmd *cmd, const char *str)
 }
 
 uint32_t modem_cmd_send_sync_event(struct modem_cmd *cmd, const char *str, struct k_event *event,
-			      uint32_t events, k_timeout_t timeout)
+				   uint32_t events, k_timeout_t timeout)
 {
 	int ret;
 
