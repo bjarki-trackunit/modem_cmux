@@ -745,8 +745,8 @@ int main(void)
 
 	__ASSERT(quectel_bgxx_resume(bgxx) == 0, "Resume failed");
 
-	eventMask = modem_cmd_send_sync_event(&bgxx_data->cmd, "AT+QTEMP2", &bgxx_data->cmd_events,
-					      (EVENT_CMD_AT_OK | EVENT_CMD_AT_ERROR), K_MSEC(1000));
+	eventMask = modem_cmd_send_sync_event(&bgxx_data->cmd, "ATE0", &bgxx_data->cmd_events,
+					      EVENT_CMD_AT_OK, K_MSEC(1000));
 	// 0 it a timeout
 
 	eventMask = modem_cmd_send_sync_event(&bgxx_data->cmd, "AT+QTEMP", &bgxx_data->cmd_events,
