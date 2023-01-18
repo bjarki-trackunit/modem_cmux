@@ -12,12 +12,25 @@ LOG_MODULE_REGISTER(modem_cmd);
 
 #include "modem_cmd.h"
 
-#define MODEM_CMD_MATCHES_INDEX_RESPONSE  (0)
-#define MODEM_CMD_MATCHES_INDEX_ABORT     (1)
-#define MODEM_CMD_MATCHES_INDEX_UNSOL     (2)
+#define MODEM_CMD_MATCHES_INDEX_RESPONSE        (0)
+#define MODEM_CMD_MATCHES_INDEX_ABORT           (1)
+#define MODEM_CMD_MATCHES_INDEX_UNSOL           (2)
+
+#define MODEM_CMD_SCRIPT_STATUS_RUNNING_BIT     (0)
+
+#define MODEM_CMD_EVENT_SCRIPT_ABORTED          (BIT(0))
+#define MODEM_CMD_EVENT_SCRIPT_STOPPED          (BIT(1))
+
+#define MODEM_CMD_SCRIPT_ABORT_TIMEOUT          (K_MSEC(500))
 
 static void modem_cmd_script_stop(struct modem_cmd *cmd)
 {
+	uint32_t events;
+
+	/* Save script event to post */
+	events = (cmd->script_cmd_it == cmd->script->script_cmds_size) ?
+		MODEM_CMD_EVENT_SCRIPT_STOPPED : MODEM_CMD_EVENT_SCRIPT_ABORTED;
+
 	/* Clear script */
 	cmd->script = NULL;
 
@@ -26,6 +39,9 @@ static void modem_cmd_script_stop(struct modem_cmd *cmd)
 	cmd->matches_size[MODEM_CMD_MATCHES_INDEX_ABORT] = 0;
 	cmd->matches[MODEM_CMD_MATCHES_INDEX_RESPONSE] = NULL;
 	cmd->matches_size[MODEM_CMD_MATCHES_INDEX_RESPONSE] = 0;
+
+	/* Post script event */
+	k_event_post(&cmd->script_event, events);
 
 	LOG_DBG("");
 }
@@ -86,12 +102,6 @@ static void modem_cmd_script_run_handler(struct k_work *item)
 	struct modem_cmd *cmd = script_run_work->cmd;
 	const struct modem_cmd_script *script = script_run_work->script;
 
-	/* Validate no script currently running */
-	if (cmd->script != NULL) {
-		/* Abort currently running script */
-		modem_cmd_script_stop(cmd);
-	}
-
 	/* Start script */
 	modem_cmd_script_start(cmd, script);
 }
@@ -108,7 +118,7 @@ static void modem_cmd_script_abort_handler(struct k_work *item)
 		return;
 	}
 
-	/* Abort currently running script */
+	/* Abort script */
 	modem_cmd_script_stop(cmd);
 }
 
@@ -286,7 +296,7 @@ static void modem_cmd_on_command_received_abort(struct modem_cmd *cmd)
 	}
 
 	/* Abort script */
-	modem_cmd_script_abort(cmd);
+	modem_cmd_script_stop(cmd);
 }
 
 static void modem_cmd_on_command_received_resp(struct modem_cmd *cmd)
@@ -530,6 +540,12 @@ int modem_cmd_init(struct modem_cmd *cmd, const struct modem_cmd_config *config)
 	cmd->script_abort_work.cmd = cmd;
 	k_work_init(&cmd->script_abort_work.work, modem_cmd_script_abort_handler);
 
+	/* Initialize script event */
+	k_event_init(&cmd->script_event);
+
+	/* Initialize script state */
+	atomic_set(&cmd->script_status, 0);
+
 	return 0;
 }
 
@@ -550,8 +566,12 @@ int modem_cmd_attach(struct modem_cmd *cmd, struct modem_pipe *pipe)
 	return modem_pipe_event_handler_set(pipe, modem_cmd_pipe_event_handler, cmd);
 }
 
-int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script)
+int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script,
+			 k_timeout_t timeout)
 {
+	uint32_t events;
+	int ret;
+
 	/* Validate attached */
 	if (cmd->pipe == NULL) {
 		return -EPERM;
@@ -564,14 +584,19 @@ int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *s
 
 	/* Validate script */
 	if ((script->script_cmds == NULL) ||
-	    (script->script_cmds_size == 0)) {
+	    (script->script_cmds_size == 0) ||
+	    ((script->abort_matches != NULL) && (script->abort_matches_size == 0))) {
 		return -EINVAL;
 	}
 
-	/* Validate script run work idle */
-	if (k_work_is_pending(&cmd->script_run_work.work) == true) {
+	/* Validate script is not currently running */
+	if (atomic_test_and_set_bit(&cmd->script_status, MODEM_CMD_SCRIPT_STATUS_RUNNING_BIT) == true) {
 		return -EBUSY;
 	}
+
+	/* Clear script events */
+	k_event_clear(&cmd->script_event,
+		      MODEM_CMD_EVENT_SCRIPT_ABORTED | MODEM_CMD_EVENT_SCRIPT_STOPPED);
 
 	/* Initialize work item data */
 	cmd->script_run_work.script = script;
@@ -579,23 +604,47 @@ int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *s
 	/* Submit script run work */
 	k_work_submit(&cmd->script_run_work.work);
 
-	return 0;
-}
+	/* Wait for script aborted, stopped or timed out */
+	events = k_event_wait(&cmd->script_event,
+			      MODEM_CMD_EVENT_SCRIPT_ABORTED |
+			      MODEM_CMD_EVENT_SCRIPT_STOPPED,
+			      false, timeout);
 
-void modem_cmd_script_abort(struct modem_cmd *cmd)
-{
-	/* Validate arguments */
-	if (cmd == NULL) {
-		return;
-	}
+	/* Return script result if timeout did not occur */
+	if (events != 0) {
+		/* Determine script result */
+		ret = (events == MODEM_CMD_EVENT_SCRIPT_STOPPED) ? 0 : -EAGAIN;
 
-	/* Validate script abort work idle */
-	if (k_work_is_pending(&cmd->script_abort_work.work) == true) {
-		return;
+		/* Update script status */
+		atomic_clear_bit(&cmd->script_status, MODEM_CMD_SCRIPT_STATUS_RUNNING_BIT);
+
+		return ret;
 	}
 
 	/* Submit script abort work */
 	k_work_submit(&cmd->script_abort_work.work);
+
+	/* Wait for script aborted, stopped or timed out */
+	events = k_event_wait(&cmd->script_event,
+				MODEM_CMD_EVENT_SCRIPT_ABORTED |
+				MODEM_CMD_EVENT_SCRIPT_STOPPED,
+				false, MODEM_CMD_SCRIPT_ABORT_TIMEOUT);
+
+	/* Validate script stopped or aborted */
+	if (events == 0) {
+		LOG_WRN("Script blocked");
+
+		/* Leave script status as running forever */
+		return -EBUSY;
+	}
+
+	/* Determine script result */
+	ret = (events == MODEM_CMD_EVENT_SCRIPT_STOPPED) ? 0 : -EAGAIN;
+
+	/* Update script status */
+	atomic_clear_bit(&cmd->script_status, MODEM_CMD_SCRIPT_STATUS_RUNNING_BIT);
+
+	return ret;
 }
 
 int modem_cmd_send(struct modem_cmd *cmd, const char *str)
@@ -669,9 +718,6 @@ int modem_cmd_release(struct modem_cmd *cmd)
 	/* Cancel process work */
 	struct k_work_sync sync;
 	k_work_cancel_delayable_sync(&cmd->process_work.dwork, &sync);
-
-	/* Abort script if running */
-	modem_cmd_script_abort(cmd);
 
 	cmd->pipe = NULL;
 

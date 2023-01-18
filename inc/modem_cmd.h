@@ -8,6 +8,7 @@
 #include <zephyr/types.h>
 #include <zephyr/device.h>
 #include <zephyr/sys/ring_buffer.h>
+#include <zephyr/sys/atomic.h>
 
 #include "modem_pipe.h"
 
@@ -180,9 +181,9 @@ struct modem_cmd {
 	uint16_t argc;
 
 	/* Matches
-	 * Index 0 -> Unsolicited matches
+	 * Index 0 -> Response matches
 	 * Index 1 -> Abort matches
-	 * Index 2 -> Response matches
+	 * Index 2 -> Unsolicited matches
 	 */
 	struct modem_cmd_match *matches[3];
 	uint16_t matches_size[3];
@@ -192,6 +193,8 @@ struct modem_cmd {
 	struct modem_cmd_script_run_work_item script_run_work;
 	struct modem_cmd_script_abort_work_item script_abort_work;
 	uint16_t script_cmd_it;
+	struct k_event script_event;
+	atomic_t script_status;
 
 	/* Match parsing */
 	struct modem_cmd_match *parse_match;
@@ -252,20 +255,17 @@ int modem_cmd_attach(struct modem_cmd *cmd, struct modem_pipe *pipe);
  *
  * @param cmd Modem command instance
  * @param script Script to run
+ * @param timeout Timeout for script to complete
  *
  * @returns 0 if successful
  * @returns -EBUSY if a script is currently running
- * @returns -EPERM if modem command is not attached
+ * @returns -EPERM if modem pipe is not attached
  * @returns -EINVAL if arguments or script is invalid
- */
-int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script);
-
-/**
- * @brief Abort running script
  *
- * @param cmd Modem command instance
+ * @note Script will automatically be aborted if timeout occurs
  */
-void modem_cmd_script_abort(struct modem_cmd *cmd);
+int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script,
+			 k_timeout_t timeout);
 
 /**
  * @brief Send command to modem asynchronously
