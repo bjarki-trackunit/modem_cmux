@@ -90,6 +90,8 @@ static void modem_cmd_script_start(struct modem_cmd *cmd, const struct modem_cmd
 	cmd->matches[MODEM_CMD_MATCHES_INDEX_ABORT] = script->abort_matches;
 	cmd->matches_size[MODEM_CMD_MATCHES_INDEX_ABORT] = script->abort_matches_size;
 
+	LOG_DBG("");
+
 	/* Set first script command */
 	modem_cmd_script_next(cmd, true);
 }
@@ -375,6 +377,15 @@ static void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 {
 	/* Validate receive buffer not overrun */
 	if (cmd->receive_buf_size == cmd->receive_buf_len) {
+		LOG_WRN("Receive buffer overrun");
+		modem_cmd_parse_reset(cmd);
+
+		return;
+	}
+
+	/* Validate argv buffer not overrun */
+	if (cmd->argc == cmd->argv_size) {
+		LOG_WRN("Argv buffer overrun");
 		modem_cmd_parse_reset(cmd);
 
 		return;
@@ -632,7 +643,7 @@ int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *s
 
 	/* Validate script stopped or aborted */
 	if (events == 0) {
-		LOG_WRN("Script blocked");
+		LOG_ERR("Script blocked");
 
 		/* Leave script status as running forever */
 		return -EBUSY;
