@@ -99,8 +99,8 @@ struct quectel_bgxx_data {
 	/* UART bus */
 	struct modem_pipe_uart bus_pipe_uart;
 	struct modem_pipe bus_pipe;
-	uint8_t bus_pipe_rx_buf[512];
-	uint8_t bus_pipe_tx_buf[512];
+	uint8_t bus_pipe_rx_buf[128];
+	uint8_t bus_pipe_tx_buf[128];
 
 	/* Command parser */
 	struct modem_cmd cmd;
@@ -576,7 +576,7 @@ static int quectel_bgxx_init(const struct device *dev)
 		.argv_size = sizeof(data->cmd_argv),
 		.unsol_matches = cmd_matches,
 		.unsol_matches_size = ARRAY_SIZE(cmd_matches),
-		.process_timeout = K_MSEC(20),
+		.process_timeout = K_MSEC(2),
 	};
 
 	ret = modem_cmd_init(&data->cmd, &cmd_config);
@@ -592,6 +592,7 @@ static int quectel_bgxx_init(const struct device *dev)
 		.dlcis_cnt = ARRAY_SIZE(data->cmux_dlcis),
 		.receive_buf = data->cmux_receive_buf,
 		.receive_buf_size = sizeof(data->cmux_receive_buf),
+		.receive_timeout = K_MSEC(3),
 	};
 
 	ret = modem_cmux_init(&data->cmux, &cmux_config);

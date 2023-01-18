@@ -500,7 +500,7 @@ static void modem_cmd_pipe_event_handler(struct modem_pipe *pipe, enum modem_pip
 {
 	struct modem_cmd *cmd = (struct modem_cmd *)user_data;
 
-	k_work_reschedule(&cmd->process_work.dwork, cmd->process_timeout);
+	k_work_schedule(&cmd->process_work.dwork, cmd->process_timeout);
 }
 
 /*********************************************************

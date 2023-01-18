@@ -157,6 +157,7 @@ struct modem_cmux {
 
 	/* Work */
 	struct modem_cmux_work_delayable process_received;
+	k_timeout_t receive_timeout;
 };
 
 /**
@@ -167,6 +168,7 @@ struct modem_cmux {
  * @param dlcis_cnt Length of array of DLCI channel contexts
  * @param receive_buf Receive buffer
  * @param receive_buf_size Sice of receive buffer in bytes
+ * @param receive_timeout Timeout from data is received until data is read
  */
 struct modem_cmux_config {
 	modem_cmux_event_handler_t event_handler;
@@ -175,6 +177,7 @@ struct modem_cmux_config {
 	uint16_t dlcis_cnt;
 	uint8_t *receive_buf;
 	uint16_t receive_buf_size;
+	k_timeout_t receive_timeout;
 };
 
 /**
