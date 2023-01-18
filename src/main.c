@@ -99,14 +99,14 @@ struct quectel_bgxx_data {
 	/* UART bus */
 	struct modem_pipe_uart bus_pipe_uart;
 	struct modem_pipe bus_pipe;
-	uint8_t bus_pipe_rx_buf[256];
-	uint8_t bus_pipe_tx_buf[256];
+	uint8_t bus_pipe_rx_buf[512];
+	uint8_t bus_pipe_tx_buf[512];
 
 	/* Command parser */
 	struct modem_cmd cmd;
 	uint8_t cmd_receive_buf[128];
 	uint8_t cmd_delimiter[2];
-	uint8_t *cmd_argv[16];
+	uint8_t *cmd_argv[32];
 	struct k_event cmd_events;
 
 	/* State */
@@ -574,8 +574,8 @@ static int quectel_bgxx_init(const struct device *dev)
 		.delimiter_size = sizeof(data->cmd_delimiter),
 		.argv = data->cmd_argv,
 		.argv_size = sizeof(data->cmd_argv),
-		.matches = cmd_matches,
-		.matches_size = ARRAY_SIZE(cmd_matches),
+		.unsol_matches = cmd_matches,
+		.unsol_matches_size = ARRAY_SIZE(cmd_matches),
 		.process_timeout = K_MSEC(20),
 	};
 

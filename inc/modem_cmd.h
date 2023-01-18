@@ -8,6 +8,7 @@
 #include <zephyr/types.h>
 #include <zephyr/device.h>
 #include <zephyr/sys/ring_buffer.h>
+#include <zephyr/sys/atomic.h>
 
 #include "modem_pipe.h"
 
@@ -17,63 +18,98 @@
 struct modem_cmd;
 
 /**
- * @brief Callback invoked when received line matches match configuration
+ * @brief Callback called when matching command is received
  *
  * @param cmd Pointer to command handler instance
  * @param argv Pointer to array of parsed arguments
- * @param argc Number of parsed arguments, arg 0 holds the exact match which triggered callback
+ * @param argc Number of parsed arguments, arg 0 holds the exact match
  * @param user_data Free to use user data set during modem_cmd_init()
  */
 typedef void (*modem_cmd_match_callback)(struct modem_cmd *cmd, char **argv, uint16_t argc,
 					 void *user_data);
 
 /**
- * @brief Modem command match configuration
- *
- * @details Determines which parameters to match in recevied line, and which
- * callback to call if match occurs.
- *
- * @param match This is the string which the recevied line must match
- * @param wildcards This allows for the use of wildcards ("?") in the match string
- * @param separators Char string containing chars which will seperate arguments (",.:")
- * @param callback Called if received line matches configuration
- *
- * @warning Use the provided macros MODEM_CMD_MATCH() and MODEM_CMD_MATCH_WILDCARD() to
- * initialize this struct
- *
- * @example
- *
- * struct modem_cmd_match matches[] = {
- *         MODEM_CMD_MATCH("OK", "", on_ok),
- *         MODEM_CMD_MATCH("AT+CREG", ",", on_creg),
- *         MODEM_CMD_MATCH_WILDCARD("??RMC", ",", on_rmc),
- * };
- *
+ * @brief Modem command match
  */
 struct modem_cmd_match {
+	/* Match array */
 	const uint8_t *match;
 	const uint8_t match_size;
+
+	/* Separators array */
 	const uint8_t *separators;
 	const uint8_t separators_size;
-	const modem_cmd_match_callback callback;
+
+	/* Set if modem command handler shall use wildcards when matching */
 	const bool wildcards;
+
+	/* Type of modem command handler */
+	const modem_cmd_match_callback callback;
+
+	/* Used by matching algorithm */
 	bool matching;
 };
 
-#define MODEM_CMD_MATCH(_match, _separators, _callback)                                            \
-	{                                                                                          \
-		.match = (uint8_t *)(_match), .match_size = (uint8_t)(sizeof(_match) - 1),         \
-		.separators = (uint8_t *)(_separators),                                            \
-		.separators_size = (uint8_t)(sizeof(_separators) - 1), .callback = _callback,      \
-		.wildcards = false, .matching = false,                                             \
+#define MODEM_CMD_MATCH(_match, _separators, _callback)                 \
+	{                                                               \
+		.match = (uint8_t *)(_match),                           \
+		.match_size = (uint8_t)(sizeof(_match) - 1),            \
+		.separators = (uint8_t *)(_separators),                 \
+		.separators_size = (uint8_t)(sizeof(_separators) - 1),  \
+		.wildcards = false,                                     \
+		.callback = _callback,                                  \
+		.matching = false,                                      \
 	}
 
-#define MODEM_CMD_MATCH_WILDCARD(_match, _separators, _callback)                                   \
-	{                                                                                          \
-		.match = (uint8_t *)(_match), .match_size = (uint8_t)(sizeof(_match) - 1),         \
-		.separators = (uint8_t *)(_separators),                                            \
-		.separators_size = (uint8_t)(sizeof(_separators) - 1), .callback = _callback,      \
-		.wildcards = true, .matching = false,                                              \
+#define MODEM_CMD_MATCH_WILDCARD(_match, _separators, _callback)        \
+	{                                                               \
+		.match = (uint8_t *)(_match),                           \
+		.match_size = (uint8_t)(sizeof(_match) - 1),            \
+		.separators = (uint8_t *)(_separators),                 \
+		.separators_size = (uint8_t)(sizeof(_separators) - 1),  \
+		.wildcards = true,                                      \
+		.callback = _callback,                                  \
+		.matching = false,                                      \
+	}
+
+/**
+ * @brief Modem command script command
+ *
+ * @param request Request to send to modem formatted as char string
+ * @param response Expected response to request
+ */
+struct modem_cmd_script_cmd {
+	const char *request;
+	struct modem_cmd_match response_match;
+};
+
+#define MODEM_CMD_SCRIPT_CMD(_request, _response_match)                 \
+	{                                                               \
+		.request = _request,                                    \
+		.response_match = _response_match,             	        \
+	}
+
+/**
+ * @brief Modem command script
+ *
+ * @param script_cmds Array of script commands
+ * @param script_cmds_size Elements in array of script commands
+ * @param abort_matches Array of abort matches
+ * @param abort_matches_size Elements in array of abort matches
+ */
+struct modem_cmd_script {
+	struct modem_cmd_script_cmd *script_cmds;
+	uint16_t script_cmds_size;
+	struct modem_cmd_match *abort_matches;
+	uint16_t abort_matches_size;
+};
+
+#define MODEM_CMD_SCRIPT(_script_cmds, _abort_matches)                  \
+	{                                                               \
+		.script_cmds = _script_cmds,                            \
+		.script_cmds_size = ARRAY_SIZE(_script_cmds),           \
+		.abort_matches = _abort_matches,                        \
+		.abort_matches_size = ARRAY_SIZE(_abort_matches),       \
 	}
 
 /**
@@ -81,8 +117,36 @@ struct modem_cmd_match {
  *
  * @note k_work struct must be placed first
  */
-struct modem_cmd_process_item {
+struct modem_cmd_work_item {
 	struct k_work_delayable dwork;
+	struct modem_cmd *cmd;
+};
+
+/**
+ * @brief Script run work item
+ *
+ * @param work Work item
+ * @param cmd Modem command instance
+ * @param script Pointer to new script to run
+ *
+ * @note k_work struct must be placed first
+ */
+struct modem_cmd_script_run_work_item {
+	struct k_work work;
+	struct modem_cmd *cmd;
+	const struct modem_cmd_script *script;
+};
+
+/**
+ * @brief Script abort work item
+ *
+ * @param work Work item
+ * @param cmd Modem command instance
+ *
+ * @note k_work struct must be placed first
+ */
+struct modem_cmd_script_abort_work_item {
+	struct k_work work;
 	struct modem_cmd *cmd;
 };
 
@@ -106,25 +170,40 @@ struct modem_cmd {
 	uint8_t work_buf[32];
 	uint16_t work_buf_len;
 
+	/* Command delimiter */
 	uint8_t *delimiter;
 	uint16_t delimiter_size;
-	uint16_t delimiter_match_cnt;
+	uint16_t delimiter_match_size;
 
-	/* Arguments */
+	/* Parsed arguments */
 	uint8_t **argv;
 	uint16_t argv_size;
 	uint16_t argc;
 
-	/* Matches */
-	struct modem_cmd_match *matches;
-	uint16_t matches_size;
+	/* Matches
+	 * Index 0 -> Response matches
+	 * Index 1 -> Abort matches
+	 * Index 2 -> Unsolicited matches
+	 */
+	struct modem_cmd_match *matches[3];
+	uint16_t matches_size[3];
 
-	/* Match command parsing */
+	/* Script execution */
+	const struct modem_cmd_script *script;
+	struct modem_cmd_script_run_work_item script_run_work;
+	struct modem_cmd_script_abort_work_item script_abort_work;
+	uint16_t script_cmd_it;
+	struct k_event script_event;
+	atomic_t script_status;
+
+	/* Match parsing */
 	struct modem_cmd_match *parse_match;
 	uint16_t parse_match_len;
 	uint16_t parse_arg_len;
+	uint16_t parse_match_type;
 
-	struct modem_cmd_process_item process;
+	/* Process received data */
+	struct modem_cmd_work_item process_work;
 	k_timeout_t process_timeout;
 };
 
@@ -138,8 +217,8 @@ struct modem_cmd {
  * @param delimiter_size Size of delimiter
  * @param argv Array of pointers used to point to parsed arguments
  * @param argv_size Elements in array of pointers
- * @param matches Array of match configurations
- * @param matches_size Elements in array of match configurations
+ * @param unsol_matches Array of unsolicited matches
+ * @param unsol_matches_size Elements in array of unsolicited matches
  * @param process_timeout Delay from receive ready event to pipe receive occurs
  */
 struct modem_cmd_config {
@@ -150,8 +229,8 @@ struct modem_cmd_config {
 	uint16_t delimiter_size;
 	uint8_t **argv;
 	uint16_t argv_size;
-	struct modem_cmd_match *matches;
-	uint16_t matches_size;
+	struct modem_cmd_match *unsol_matches;
+	uint16_t unsol_matches_size;
 	k_timeout_t process_timeout;
 };
 
@@ -170,6 +249,23 @@ int modem_cmd_init(struct modem_cmd *cmd, const struct modem_cmd_config *config)
  * @note Command handler is enabled if successful
  */
 int modem_cmd_attach(struct modem_cmd *cmd, struct modem_pipe *pipe);
+
+/**
+ * @brief Run script
+ *
+ * @param cmd Modem command instance
+ * @param script Script to run
+ * @param timeout Timeout for script to complete
+ *
+ * @returns 0 if successful
+ * @returns -EBUSY if a script is currently running
+ * @returns -EPERM if modem pipe is not attached
+ * @returns -EINVAL if arguments or script is invalid
+ *
+ * @note Script will automatically be aborted if timeout occurs
+ */
+int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script,
+			 k_timeout_t timeout);
 
 /**
  * @brief Send command to modem asynchronously
@@ -198,14 +294,6 @@ int modem_cmd_send(struct modem_cmd *cmd, const char *str);
  */
 uint32_t modem_cmd_send_sync_event(struct modem_cmd *cmd, const char *str, struct k_event *event,
 				   uint32_t events, k_timeout_t timeout);
-
-/**
- * @brief Send command to modem synchronously
- *
- * @param cmd Modem command instance
- * @param str Command to send without delimiter
- */
-int modem_cmd_send_sync_condition(struct modem_cmd *cmd, const char *str);
 
 /**
  * @brief Release pipe from command handler

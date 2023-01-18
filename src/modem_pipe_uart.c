@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(modem_pipe_uart);
+
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/uart.h>
@@ -41,6 +44,8 @@ static void modem_pipe_uart_irq_handler_rx_ready(struct modem_pipe_uart *context
 
 		/* Disable rx IRQ */
 		uart_irq_rx_disable(context->uart);
+
+		LOG_WRN("RX buffer overrun");
 
 		return;
 	}
