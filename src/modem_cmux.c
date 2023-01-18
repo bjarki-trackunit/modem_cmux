@@ -205,7 +205,7 @@ static void modem_cmux_bus_event_handler(struct modem_pipe *pipe, enum modem_pip
 	struct modem_cmux *cmux = (struct modem_cmux *)user_data;
 
 	if (event == MODEM_PIPE_EVENT_RECEIVE_READY) {
-		k_work_reschedule(&cmux->process_received.dwork, K_MSEC(2));
+		k_work_schedule(&cmux->process_received.dwork, cmux->receive_timeout);
 	}
 }
 
@@ -825,6 +825,7 @@ int modem_cmux_init(struct modem_cmux *cmux, const struct modem_cmux_config *con
 	cmux->dlcis_cnt = config->dlcis_cnt;
 	cmux->receive_buf = config->receive_buf;
 	cmux->receive_buf_size = config->receive_buf_size;
+	cmux->receive_timeout = config->receive_timeout;
 
 	/* Initialize delayable work */
 	cmux->process_received.cmux = cmux;
