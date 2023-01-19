@@ -5,7 +5,7 @@
  */
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(modem_cmux);
+LOG_MODULE_REGISTER(modem_cmux, 0);
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/crc.h>
@@ -325,21 +325,6 @@ static int modem_cmux_bus_write_frame(struct modem_cmux *cmux, const struct mode
 	return 0;
 }
 
-static int modem_cmux_bus_pipe_receive(struct modem_cmux *cmux)
-{
-	int ret;
-
-	ret = modem_pipe_receive(cmux->pipe, cmux->work_buf, sizeof(cmux->work_buf));
-
-	if (ret < 0) {
-		return ret;
-	}
-
-	cmux->work_buf_len = (uint16_t)ret;
-
-	return ret;
-}
-
 /*************************************************************************************************
  * Modem CMUX processing
  *************************************************************************************************/
@@ -516,8 +501,6 @@ static void modem_cmux_process_received_byte(struct modem_cmux *cmux, uint8_t by
 	switch (cmux->receive_state) {
 	case MODEM_CMUX_RECEIVE_STATE_SOF:
 		if (byte == MODEM_CMUX_F_MARKER) {
-			LOG_DBG("Receiving frame");
-
 			/* Initialize */
 			cmux->receive_buf_len = 0;
 			cmux->frame_header_len = 0;
@@ -695,10 +678,25 @@ static void modem_cmux_process_received(struct k_work *item)
 {
 	struct modem_cmux_work_delayable *cmux_process = (struct modem_cmux_work_delayable *)item;
 	struct modem_cmux *cmux = cmux_process->cmux;
+	int ret;
 
-	/* Receive and process all available data from bus pipe */
-	while (modem_cmux_bus_pipe_receive(cmux) > 0) {
-		modem_cmux_process_received_bytes(cmux);
+	/* Fill work buffer */
+	ret = modem_pipe_receive(cmux->pipe, cmux->work_buf, sizeof(cmux->work_buf));
+
+	/* Validate data received */
+	if (ret < 1) {
+		return;
+	}
+
+	/* Save received data length */
+	cmux->work_buf_len = (size_t)ret;
+
+	/* Process data */
+	modem_cmux_process_received_bytes(cmux);
+
+	/* Schedule receive handler if data remains */
+	if (cmux->work_buf_len == sizeof(cmux->work_buf)) {
+		k_work_schedule(&cmux->process_received.dwork, K_NO_WAIT);
 	}
 }
 

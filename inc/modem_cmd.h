@@ -8,7 +8,6 @@
 #include <zephyr/types.h>
 #include <zephyr/device.h>
 #include <zephyr/sys/ring_buffer.h>
-#include <zephyr/sys/atomic.h>
 
 #include "modem_pipe.h"
 
@@ -194,7 +193,6 @@ struct modem_cmd {
 	struct modem_cmd_script_abort_work_item script_abort_work;
 	uint16_t script_cmd_it;
 	struct k_event script_event;
-	atomic_t script_status;
 
 	/* Match parsing */
 	struct modem_cmd_match *parse_match;
@@ -255,17 +253,38 @@ int modem_cmd_attach(struct modem_cmd *cmd, struct modem_pipe *pipe);
  *
  * @param cmd Modem command instance
  * @param script Script to run
- * @param timeout Timeout for script to complete
  *
  * @returns 0 if successful
  * @returns -EBUSY if a script is currently running
  * @returns -EPERM if modem pipe is not attached
  * @returns -EINVAL if arguments or script is invalid
  *
- * @note Script will automatically be aborted if timeout occurs
+ * @note Script runs asynchronously until complete or aborted.
+ * @note Use modem_cmd_script_wait() to synchronize with script termination
  */
-int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script,
-			 k_timeout_t timeout);
+int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script);
+
+/**
+ * @brief Abort script
+ *
+ * @param cmd Modem command instance
+ *
+ * @note Use modem_cmd_script_wait() to synchronize with script termination
+ */
+void modem_cmd_script_abort(struct modem_cmd *cmd);
+
+/**
+ * @brief Wait until script execution complete
+ *
+ * @param cmd Modem command instance
+ *
+ * @returns 0 if script is terminated within timeout
+ * @returns -EAGAIN if script is aborted within timeout
+ * @returns -EBUSY if timeout elapses while script is still running
+ *
+ * @note To check status of script, set timeout to K_NO_WAIT
+ */
+int modem_cmd_script_wait(struct modem_cmd *cmd, k_timeout_t timeout);
 
 /**
  * @brief Send command to modem asynchronously

@@ -551,11 +551,9 @@ int modem_cmd_init(struct modem_cmd *cmd, const struct modem_cmd_config *config)
 	cmd->script_abort_work.cmd = cmd;
 	k_work_init(&cmd->script_abort_work.work, modem_cmd_script_abort_handler);
 
-	/* Initialize script event */
+	/* Initialize script event and set the script stopped event */
 	k_event_init(&cmd->script_event);
-
-	/* Initialize script state */
-	atomic_set(&cmd->script_status, 0);
+	k_event_post(&cmd->script_event, MODEM_CMD_EVENT_SCRIPT_STOPPED);
 
 	return 0;
 }
@@ -577,20 +575,18 @@ int modem_cmd_attach(struct modem_cmd *cmd, struct modem_pipe *pipe)
 	return modem_pipe_event_handler_set(pipe, modem_cmd_pipe_event_handler, cmd);
 }
 
-int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script,
-			 k_timeout_t timeout)
+int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *script)
 {
 	uint32_t events;
-	int ret;
-
-	/* Validate attached */
-	if (cmd->pipe == NULL) {
-		return -EPERM;
-	}
 
 	/* Validate arguments */
 	if ((cmd == NULL) || (script == NULL)) {
 		return -EINVAL;
+	}
+
+	/* Validate attached */
+	if (cmd->pipe == NULL) {
+		return -EPERM;
 	}
 
 	/* Validate script */
@@ -600,8 +596,19 @@ int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *s
 		return -EINVAL;
 	}
 
-	/* Validate script is not currently running */
-	if (atomic_test_and_set_bit(&cmd->script_status, MODEM_CMD_SCRIPT_STATUS_RUNNING_BIT) == true) {
+	/* Validate run work not pending */
+	if (k_work_is_pending(&cmd->script_run_work.work) == true) {
+		return -EBUSY;
+	}
+
+	/* Get current script events */
+	events = k_event_wait(&cmd->script_event,
+				MODEM_CMD_EVENT_SCRIPT_ABORTED |
+				MODEM_CMD_EVENT_SCRIPT_STOPPED,
+				false, K_NO_WAIT);
+
+	/* Validate script terminated */
+	if ((events & (MODEM_CMD_EVENT_SCRIPT_ABORTED | MODEM_CMD_EVENT_SCRIPT_STOPPED)) == 0) {
 		return -EBUSY;
 	}
 
@@ -615,47 +622,60 @@ int modem_cmd_script_run(struct modem_cmd *cmd, const struct modem_cmd_script *s
 	/* Submit script run work */
 	k_work_submit(&cmd->script_run_work.work);
 
+	return 0;
+}
+
+void modem_cmd_script_abort(struct modem_cmd *cmd)
+{
+	uint32_t events;
+
+	/* Validate arguments */
+	if (cmd == NULL) {
+		return;
+	}
+
+	/* Validate abort work not pending */
+	if (k_work_is_pending(&cmd->script_abort_work.work) == true) {
+		return;
+	}
+
+	/* Get current script events */
+	events = k_event_wait(&cmd->script_event,
+				MODEM_CMD_EVENT_SCRIPT_ABORTED |
+				MODEM_CMD_EVENT_SCRIPT_STOPPED,
+				false, K_NO_WAIT);
+
+	/* Validate script running */
+	if ((events & (MODEM_CMD_EVENT_SCRIPT_ABORTED | MODEM_CMD_EVENT_SCRIPT_STOPPED)) > 0) {
+		return;
+	}
+
+	/* Submit script abort work */
+	k_work_submit(&cmd->script_abort_work.work);
+}
+
+int modem_cmd_script_wait(struct modem_cmd *cmd, k_timeout_t timeout)
+{
+	uint32_t events;
+
+	/* Validate arguments */
+	if (cmd == NULL) {
+		return -EINVAL;
+	}
+
 	/* Wait for script aborted, stopped or timed out */
 	events = k_event_wait(&cmd->script_event,
 			      MODEM_CMD_EVENT_SCRIPT_ABORTED |
 			      MODEM_CMD_EVENT_SCRIPT_STOPPED,
 			      false, timeout);
 
-	/* Return script result if timeout did not occur */
-	if (events != 0) {
-		/* Determine script result */
-		ret = (events == MODEM_CMD_EVENT_SCRIPT_STOPPED) ? 0 : -EAGAIN;
-
-		/* Update script status */
-		atomic_clear_bit(&cmd->script_status, MODEM_CMD_SCRIPT_STATUS_RUNNING_BIT);
-
-		return ret;
-	}
-
-	/* Submit script abort work */
-	k_work_submit(&cmd->script_abort_work.work);
-
-	/* Wait for script aborted, stopped or timed out */
-	events = k_event_wait(&cmd->script_event,
-				MODEM_CMD_EVENT_SCRIPT_ABORTED |
-				MODEM_CMD_EVENT_SCRIPT_STOPPED,
-				false, MODEM_CMD_SCRIPT_ABORT_TIMEOUT);
-
-	/* Validate script stopped or aborted */
-	if (events == 0) {
-		LOG_ERR("Script blocked");
-
-		/* Leave script status as running forever */
+	/* Check if timeout occured */
+	if ((events & (MODEM_CMD_EVENT_SCRIPT_ABORTED | MODEM_CMD_EVENT_SCRIPT_STOPPED)) == 0) {
 		return -EBUSY;
 	}
 
-	/* Determine script result */
-	ret = (events == MODEM_CMD_EVENT_SCRIPT_STOPPED) ? 0 : -EAGAIN;
-
-	/* Update script status */
-	atomic_clear_bit(&cmd->script_status, MODEM_CMD_SCRIPT_STATUS_RUNNING_BIT);
-
-	return ret;
+	/* Return appropriate script result */
+	return (events == MODEM_CMD_EVENT_SCRIPT_STOPPED) ? 0 : -EAGAIN;
 }
 
 int modem_cmd_send(struct modem_cmd *cmd, const char *str)
