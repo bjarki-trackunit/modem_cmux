@@ -27,9 +27,16 @@ static void modem_cmd_script_stop(struct modem_cmd *cmd)
 {
 	uint32_t events;
 
-	/* Save script event to post */
-	events = (cmd->script_cmd_it == cmd->script->script_cmds_size) ?
-		MODEM_CMD_EVENT_SCRIPT_STOPPED : MODEM_CMD_EVENT_SCRIPT_ABORTED;
+	/* Handle result */
+	if (cmd->script_cmd_it == cmd->script->script_cmds_size) {
+		LOG_DBG("%s: complete", cmd->script->name);
+
+		events = MODEM_CMD_EVENT_SCRIPT_STOPPED;
+	} else {
+		LOG_WRN("%s: aborted", cmd->script->name);
+
+		events = MODEM_CMD_EVENT_SCRIPT_ABORTED;
+	}
 
 	/* Clear script */
 	cmd->script = NULL;
@@ -42,8 +49,6 @@ static void modem_cmd_script_stop(struct modem_cmd *cmd)
 
 	/* Post script event */
 	k_event_post(&cmd->script_event, events);
-
-	LOG_DBG("");
 }
 
 static void modem_cmd_script_next(struct modem_cmd *cmd, bool initial)
@@ -63,6 +68,8 @@ static void modem_cmd_script_next(struct modem_cmd *cmd, bool initial)
 
 		return;
 	}
+
+	LOG_DBG("%s: step: %u", cmd->script->name, cmd->script_cmd_it);
 
 	/* Update response command handlers */
 	cmd->matches[MODEM_CMD_MATCHES_INDEX_RESPONSE] =
@@ -90,7 +97,7 @@ static void modem_cmd_script_start(struct modem_cmd *cmd, const struct modem_cmd
 	cmd->matches[MODEM_CMD_MATCHES_INDEX_ABORT] = script->abort_matches;
 	cmd->matches_size[MODEM_CMD_MATCHES_INDEX_ABORT] = script->abort_matches_size;
 
-	LOG_DBG("");
+	LOG_DBG("%s", cmd->script->name);
 
 	/* Set first script command */
 	modem_cmd_script_next(cmd, true);
@@ -128,7 +135,7 @@ static void modem_cmd_parse_reset(struct modem_cmd *cmd)
 {
 	/* Reset parameters used for parsing */
 	cmd->receive_buf_len = 0;
-	cmd->delimiter_match_size = 0;
+	cmd->delimiter_match_len = 0;
 	cmd->argc = 0;
 	cmd->parse_match = NULL;
 
@@ -269,19 +276,6 @@ static bool modem_cmd_receive_bytes(struct modem_cmd *cmd)
 	return true;
 }
 
-static void modem_cmd_on_command_received_log(struct modem_cmd *cmd)
-{
-	/* Log entire line if command is match all */
-	if ((cmd->parse_match->match_size == 0) && (cmd->argc > 1)) {
-		LOG_DBG("%s", cmd->argv[1]);
-
-		return;
-	}
-
-	/* Only log match */
-	LOG_DBG("%s", cmd->argv[0]);
-}
-
 static void modem_cmd_on_command_received_unsol(struct modem_cmd *cmd)
 {
 	/* Callback */
@@ -333,8 +327,6 @@ static bool modem_cmd_parse_find_catch_all_match(struct modem_cmd *cmd)
 
 static void modem_cmd_on_command_received(struct modem_cmd *cmd)
 {
-	modem_cmd_on_command_received_log(cmd);
-
 	switch (cmd->parse_match_type)
 	{
 	case MODEM_CMD_MATCHES_INDEX_UNSOL:
@@ -350,19 +342,20 @@ static void modem_cmd_on_command_received(struct modem_cmd *cmd)
 		break;
 	}
 
+	LOG_DBG("\"%s\"", cmd->argv[0]);
 }
 
 static void modem_cmd_on_unknown_command_received(struct modem_cmd *cmd)
 {
 	/* Try to find catch all match */
 	if (modem_cmd_parse_find_catch_all_match(cmd) == false) {
-		LOG_DBG("%.*s", cmd->receive_buf_len, cmd->receive_buf);
+		LOG_DBG("\"%.*s\"", cmd->receive_buf_len - cmd->delimiter_size, cmd->receive_buf);
 
 		return;
 	}
 
 	/* Terminate received command */
-	cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_match_size] = '\0';
+	cmd->receive_buf[cmd->receive_buf_len - cmd->delimiter_match_len] = '\0';
 
 	/* Parse command */
 	cmd->argv[0] = "";
@@ -397,6 +390,14 @@ static void modem_cmd_process_byte(struct modem_cmd *cmd, uint8_t byte)
 
 	/* Validate end delimiter not complete */
 	if (modem_cmd_parse_end_del_complete(cmd) == true) {
+		/* Filter out empty lines */
+		if (cmd->receive_buf_len == cmd->delimiter_size) {
+			/* Reset parser */
+			modem_cmd_parse_reset(cmd);
+
+			return;
+		}
+
 		/* Check if match exists */
 		if (cmd->parse_match == NULL) {
 			/* Handle unknown command */

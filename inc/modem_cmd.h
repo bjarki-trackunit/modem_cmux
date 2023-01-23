@@ -91,20 +91,48 @@ struct modem_cmd_script_cmd {
 /**
  * @brief Modem command script
  *
+ * @param name Name of script
+ * @param name_size Size of name of script
  * @param script_cmds Array of script commands
  * @param script_cmds_size Elements in array of script commands
  * @param abort_matches Array of abort matches
  * @param abort_matches_size Elements in array of abort matches
+ *
+ * @example
+ *
+ * static script1_cmds = {
+ *         MODEM_CMD_SCRIPT_CMD("AT", MODEM_CMD_MATCH("OK", "", NULL)),
+ *         MODEM_CMD_SCRIPT_CMD("ATI", MODEM_CMD_MATCH("OK", "", NULL)),
+ * };
+ *
+ * static script1_abort_matches = {
+ *         MODEM_CMD_MATCH("ERROR", ",", on_error),
+ *         MODEM_CMD_MATCH("NO CARRIER", "", on_no_carrier),
+ * };
+ *
+ * static MODEM_CMD_SCRIPT_DEFINE(script1, script1_cmds, script1_abort_matches);
  */
 struct modem_cmd_script {
-	struct modem_cmd_script_cmd *script_cmds;
-	uint16_t script_cmds_size;
-	struct modem_cmd_match *abort_matches;
-	uint16_t abort_matches_size;
+	const char *name;
+	struct modem_cmd_script_cmd *const script_cmds;
+	const uint16_t script_cmds_size;
+	struct modem_cmd_match *const abort_matches;
+	const uint16_t abort_matches_size;
 };
 
+/* DEPRECATED */
 #define MODEM_CMD_SCRIPT(_script_cmds, _abort_matches)                  \
 	{                                                               \
+		.name = "",                                             \
+		.script_cmds = _script_cmds,                            \
+		.script_cmds_size = ARRAY_SIZE(_script_cmds),           \
+		.abort_matches = _abort_matches,                        \
+		.abort_matches_size = ARRAY_SIZE(_abort_matches),       \
+	}
+
+#define MODEM_CMD_SCRIPT_DEFINE(_sym, _script_cmds, _abort_matches)     \
+	struct modem_cmd_script _sym = {                                \
+		.name = #_sym,                                          \
 		.script_cmds = _script_cmds,                            \
 		.script_cmds_size = ARRAY_SIZE(_script_cmds),           \
 		.abort_matches = _abort_matches,                        \
@@ -172,7 +200,7 @@ struct modem_cmd {
 	/* Command delimiter */
 	uint8_t *delimiter;
 	uint16_t delimiter_size;
-	uint16_t delimiter_match_size;
+	uint16_t delimiter_match_len;
 
 	/* Parsed arguments */
 	uint8_t **argv;
@@ -286,6 +314,7 @@ void modem_cmd_script_abort(struct modem_cmd *cmd);
  */
 int modem_cmd_script_wait(struct modem_cmd *cmd, k_timeout_t timeout);
 
+/* DEPRECATED */
 /**
  * @brief Send command to modem asynchronously
  *
@@ -297,6 +326,7 @@ int modem_cmd_script_wait(struct modem_cmd *cmd, k_timeout_t timeout);
  */
 int modem_cmd_send(struct modem_cmd *cmd, const char *str);
 
+/* DEPRECATED */
 /**
  * @brief Send command to modem synchronously using event
  *
